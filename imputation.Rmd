@@ -1,0 +1,380 @@
+---
+title: "Imputation"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("stringr")           
+library("tidyverse")
+library("mtsdi")
+library("imputeTS")
+library("ggpubr")
+library("MASS")
+library("finalfit")
+#library("TSdist")
+library("trend")
+library("tseries")
+library("lubridate") 
+library("mtsdi")
+library("mice")
+library("forecast")
+library("tseries")
+library("seastests")
+library("tscount")
+library("readxl")
+library("writexl")
+library("DemoTools")
+```
+
+Weather data
+```{r}
+weather_1 <- read.csv("hourly_weather_1.csv", sep = ";")
+weather_2 <- read.csv("hourly_weather_2.csv", sep = ";")
+weather_1 <- weather_1[which(weather_1$YYYY >= 1856),]
+weather_2 <- weather_2[which(weather_2$YYYY <= 1904),]
+weather_1["FF2"] <- NULL
+weather_2["FF2"] <- NULL
+weather_1["W2"] <- NULL
+weather_2["W2"] <- NULL
+
+# combining the two df's
+weather_full <- rbind(weather_1, weather_2)
+
+# Give full date column
+weather_full$DATE <- ISOdate(weather_full[,1], weather_full[,2], weather_full[,3], weather_full[,4])
+str_remove_all(weather_full$DATE, "[GMT]")
+
+# Changing the formatting
+weather_full$TA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TA)))
+weather_full$TB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TB)))
+weather_full$PA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PA)))
+weather_full$PB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PB)))
+
+# Setting the -9999 values to NA
+weather_full[weather_full == -9999] <- NA
+
+# Largest complete series
+weather_full$DIR <- as.factor(weather_full$DIR)
+weather_full$FF1 <- as.factor(weather_full$FF1)
+weather_full$W1 <- as.factor(weather_full$W1)
+comp_data <- weather_full[which(weather_full$YYYY >= 1889 & weather_full$YYYY <= 1904),]
+full_data <- comp_data
+comp_data$TA <- NULL
+comp_data$PB <- NULL
+weather_missing <- comp_data
+```
+
+Sampling n datasets
+```{r}
+gaps <- c(
+  (which(weather_full$YYYY == 1861 & weather_full$M == 7 & weather_full$D == 18 & weather_full$H == 24) - which(weather_full$YYYY == 1861 & weather_full$M == 6 & weather_full$D == 5 & weather_full$H == 15)) + 1,
+  (which(weather_full$YYYY == 1876 & weather_full$M == 11 & weather_full$D == 20 & weather_full$H == 12) - which(weather_full$YYYY == 1876 & weather_full$M == 11 & weather_full$D == 20 & weather_full$H == 1)) + 1,
+  (which(weather_full$YYYY == 1883 & weather_full$M == 11 & weather_full$D == 9 & weather_full$H == 23) - which(weather_full$YYYY == 1883 & weather_full$M == 11 & weather_full$D == 9 & weather_full$H == 14)) + 1,
+  (which(weather_full$YYYY == 1856 & weather_full$M == 2 & weather_full$D == 15 & weather_full$H == 10) - which(weather_full$YYYY == 1856 & weather_full$M == 2 & weather_full$D == 6 & weather_full$H == 10)) + 1,
+  (which(weather_full$YYYY == 1868 & weather_full$M == 5 & weather_full$D == 27 & weather_full$H == 13) - which(weather_full$YYYY == 1868 & weather_full$M == 5 & weather_full$D == 22 & weather_full$H == 12)) + 1,
+  (which(weather_full$YYYY == 1878 & weather_full$M == 6 & weather_full$D == 13 & weather_full$H == 13) - which(weather_full$YYYY == 1878 & weather_full$M == 6 & weather_full$D == 1 & weather_full$H == 12)) + 1,
+  (which(weather_full$YYYY == 1863 & weather_full$M == 6 & weather_full$D == 25 & weather_full$H == 24) - which(weather_full$YYYY == 1863 & weather_full$M == 6 & weather_full$D == 25 & weather_full$H == 13)) + 1,
+  (which(weather_full$YYYY == 1862 & weather_full$M == 7 & weather_full$D == 14 & weather_full$H == 12) - which(weather_full$YYYY == 1862 & weather_full$M == 7 & weather_full$D == 14 & weather_full$H == 11)) + 1,
+  (which(weather_full$YYYY == 1862 & weather_full$M == 9 & weather_full$D == 16 & weather_full$H == 10) - which(weather_full$YYYY == 1862 & weather_full$M == 9 & weather_full$D == 16 & weather_full$H == 9)),
+  (which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 12 & weather_full$H == 12) - which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 12 & weather_full$H == 3)) + 1,
+  (which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 15 & weather_full$H == 12) - which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 15 & weather_full$H == 3)) + 1,
+  (which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 18 & weather_full$H == 8) - which(weather_full$YYYY == 1863 & weather_full$M == 8 & weather_full$D == 18 & weather_full$H == 4)) + 1,
+  (which(weather_full$YYYY == 1864 & weather_full$M == 6 & weather_full$D == 7 & weather_full$H == 7) - which(weather_full$YYYY == 1864 & weather_full$M == 6 & weather_full$D == 7 & weather_full$H == 5)) + 1,
+  (which(weather_full$YYYY == 1882 & weather_full$M == 1 & weather_full$D == 1 & weather_full$H == 24) - which(weather_full$YYYY == 1881 & weather_full$M == 12 & weather_full$D == 31 & weather_full$H == 13)) + 1,
+  (which(weather_full$YYYY == 1882 & weather_full$M == 5 & weather_full$D == 30 & weather_full$H == 12) - which(weather_full$YYYY == 1882 & weather_full$M == 5 & weather_full$D == 29 & weather_full$H == 3)) + 1,
+  (which(weather_full$YYYY == 1888 & weather_full$M == 7 & weather_full$D == 18 & weather_full$H == 24) - which(weather_full$YYYY == 1888 & weather_full$M == 7 & weather_full$D == 18 & weather_full$H == 14)) + 1,
+  (which(weather_full$YYYY == 1862 & weather_full$M == 12 & weather_full$D == 20 & weather_full$H == 24) - which(weather_full$YYYY == 1862 & weather_full$M == 12 & weather_full$D == 20 & weather_full$H == 16)) + 1,
+  (which(weather_full$YYYY == 1874 & weather_full$M == 4 & weather_full$D == 16 & weather_full$H == 6) - which(weather_full$YYYY == 1874 & weather_full$M == 4 & weather_full$D == 16 & weather_full$H == 5)),
+  (which(weather_full$YYYY == 1877 & weather_full$M == 2 & weather_full$D == 13 & weather_full$H == 22) - which(weather_full$YYYY == 1877 & weather_full$M == 2 & weather_full$D == 13 & weather_full$H == 21)),
+  (which(weather_full$YYYY == 1878 & weather_full$M == 7 & weather_full$D == 28 & weather_full$H == 12) - which(weather_full$YYYY == 1878 & weather_full$M == 7 & weather_full$D == 28 & weather_full$H == 1)) + 1,
+  (which(weather_full$YYYY == 1880 & weather_full$M == 1 & weather_full$D == 11 & weather_full$H == 7) - which(weather_full$YYYY == 1880 & weather_full$M == 1 & weather_full$D == 11 & weather_full$H == 4)) + 1,
+  (which(weather_full$YYYY == 1884 & weather_full$M == 4 & weather_full$D == 13 & weather_full$H == 14) - which(weather_full$YYYY == 1884 & weather_full$M == 4 & weather_full$D == 13 & weather_full$H == 13)),
+  (which(weather_full$YYYY == 1884 & weather_full$M == 8 & weather_full$D == 30 & weather_full$H == 4) - which(weather_full$YYYY == 1884 & weather_full$M == 8 & weather_full$D == 30 & weather_full$H == 3)),
+  (which(weather_full$YYYY == 1884 & weather_full$M == 12 & weather_full$D == 6 & weather_full$H == 21) - which(weather_full$YYYY == 1884 & weather_full$M == 12 & weather_full$D == 6 & weather_full$H == 20)),
+  (which(weather_full$YYYY == 1887 & weather_full$M == 4 & weather_full$D == 30 & weather_full$H == 24) - which(weather_full$YYYY == 1887 & weather_full$M == 4 & weather_full$D == 30 & weather_full$H == 13) + 1),
+  (which(weather_full$YYYY == 1888 & weather_full$M == 7 & weather_full$D == 26 & weather_full$H == 12) - which(weather_full$YYYY == 1888 & weather_full$M == 7 & weather_full$D == 26 & weather_full$H == 9)) + 1,
+  (which(weather_full$YYYY == 1888 & weather_full$M == 8 & weather_full$D == 22 & weather_full$H == 6) - which(weather_full$YYYY == 1888 & weather_full$M == 8 & weather_full$D == 22 & weather_full$H == 5)))
+
+sampler <- function(n){
+  data_list <- vector(mode = "list", length = n)
+  sample_mat <- vector(mode = "list", length = n)
+  begin_list <- vector(mode = "list", length = n)
+  gap_list <- vector(mode = "list", length = n)
+  weather_missing_list <- vector(mode = "list", length = n)
+  for(i in 1:n){
+    set.seed(i)
+    # We need 27 values as there are 27 missingness patterns in the full dataset
+    sample_mat[[i]] <- as.matrix(rbind(sample(1889:1904 , 27, replace = TRUE),
+                              sample(1:12 , 27, replace = TRUE),
+                              sample(1:31 , 27, replace = TRUE),
+                              sample(1:24 , 27, replace = TRUE)))
+    # Create the gaps
+    gap_list[[i]] <- gaps
+    weather_missing_list[[i]] <- weather_missing
+    for(j in 1:27){
+      # Correction for February and for the 31st in months that only contain 30 days
+      if(sample_mat[[i]][2,j] == 2 & sample_mat[[i]][3,j] >= 29){
+        sample_mat[[i]][3,j] <- 28
+      } else if(sample_mat[[i]][2,j] == 4 & sample_mat[[i]][3,j] == 31) {
+        sample_mat[[i]][3,j] <- 30
+      } else if(sample_mat[[i]][2,j] == 6 & sample_mat[[i]][3,j] == 31) {
+        sample_mat[[i]][3,j] <- 30
+      } else if(sample_mat[[i]][2,j] == 9 & sample_mat[[i]][3,j] == 31) {
+        sample_mat[[i]][3,j] <- 30
+      } else if(sample_mat[[i]][2,j] == 11 & sample_mat[[i]][3,j] == 31) {
+        sample_mat[[i]][3,j] <- 30
+      }
+      # Create the matrices with start dates
+      begin_list[[i]][j] <- which(comp_data$YYYY == sample_mat[[i]][1,j] & comp_data$M == sample_mat[[i]][2,j] & comp_data$D == sample_mat[[i]][3,j] & comp_data$H == sample_mat[[i]][4,j])
+      # Ampute the right sequences of values from the right variables
+      # Need to use probabilities to assign NA's to sequences containing different variable counts
+      elements <- c("TB", "PA", "DIR", "FF1", "W1")
+      prob_1 <- c(0, 0, 0, 1/7, 6/7)
+      prob_10 <- c(0, 1/3, 0, 2/3, 0)
+      prob_12 <- c(1/9, 1/9, 2/9, 1/9, 4/9)
+      if(gap_list[[i]][j] == 1){
+        sampled_var_1 <- sample(x = elements, prob = prob_1, size = 1)
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),][sampled_var_1] <- NA
+      } else if(gap_list[[i]][j] == 2){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 3){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 4){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["W1"] <- NA
+      } else if(gap_list[[i]][j] == 5){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 9){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["W1"] <- NA
+      } else if(gap_list[[i]][j] == 10){
+        sampled_var_10 <- sample(x = elements, prob = prob_10, size = 1)
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),][sampled_var_10] <- NA
+      } else if(gap_list[[i]][j] == 11){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 12){
+        sampled_var_12 <- sample(x = elements, prob = prob_12, size = 1)
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),][sampled_var_12] <- NA
+      } else if(gap_list[[i]][j] == 34){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 36){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["FF1"] <- NA
+      } else if(gap_list[[i]][j] == 122){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["PA"] <- NA
+      } else if(gap_list[[i]][j] == 217){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["PA"] <- NA
+      } else if(gap_list[[i]][j] == 290){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),]["PA"] <- NA
+      } else if(gap_list[[i]][j] == 1042){
+        weather_missing_list[[i]][begin_list[[i]][j]:(begin_list[[i]][j]+gap_list[[i]][j]),][c("TB", "PA")] <- NA
+      } 
+    }
+    weather_missing_list[[i]] <- weather_missing_list[[i]][rowSums((is.na(weather_missing_list[[i]]))) != ncol(weather_missing_list[[i]]), ]
+  }
+  return(weather_missing_list)
+}
+weather_missing_list <- sampler(1000)
+```
+
+Imputation method comparision
+```{r}
+numeric_chunk <- function(a,b){
+  # Chunking setup because otherwise memory issues occur
+  n <- 50
+  mean_imp_list <- weather_missing_list[c(a:b)]
+  median_imp_list <- weather_missing_list[c(a:b)]
+  mode_imp_list <- weather_missing_list[c(a:b)]
+  smart_mean_imp_list <- weather_missing_list[c(a:b)]
+  mtsdi_imp_list <- weather_missing_list[c(a:b)]
+  lin_imp_list <- weather_missing_list[c(a:b)]
+  spline_imp_list <- weather_missing_list[c(a:b)]
+  stine_imp_list <- weather_missing_list[c(a:b)]
+  kalman_imp_list <- weather_missing_list[c(a:b)]
+  locf_imp_list <- weather_missing_list[c(a:b)]
+  nocb_imp_list  <- weather_missing_list[c(a:b)]
+  mice_missing <- weather_missing_list[c(a:b)]
+  
+  # restrict to only using numeric variables as #categories > max allowed by mice (50)
+  for(i in 1:n){
+    mice_missing[[i]]$DIR <- NULL
+    mice_missing[[i]]$FF1 <- NULL
+    mice_missing[[i]]$W1 <- NULL
+  }
+  
+  mtsdi_impute <- vector(mode = "list", length = n)
+  mice_imputed_pmm <- vector(mode = "list", length = n)
+  mice_imputed_norm <- vector(mode = "list", length = n)
+  mice_imputed_norm.nob <- vector(mode = "list", length = n)
+
+  mean_rmse <- matrix(NA, nrow = n, ncol = 2)
+  median_rmse <- matrix(NA, nrow = n, ncol = 2)
+  mode_rmse <- matrix(NA, nrow = n, ncol = 2)
+  mtsdi_rmse <- matrix(NA, nrow = n, ncol = 2)
+  lin_rmse <- matrix(NA, nrow = n, ncol = 2)
+  spline_rmse <- matrix(NA, nrow = n, ncol = 2)
+  stine_rmse <- matrix(NA, nrow = n, ncol = 2)
+  kalman_rmse <- matrix(NA, nrow = n, ncol = 2)
+  locf_rmse <- matrix(NA, nrow = n, ncol = 2)
+  nocb_rmse <- matrix(NA, nrow = n, ncol = 2)
+  mice_rmse_pmm <- matrix(NA, nrow = n, ncol = 2)
+  mice_rmse_norm <- matrix(NA, nrow = n, ncol = 2)
+  mice_rmse_norm.nob <- matrix(NA, nrow = n, ncol = 2)
+
+  colnames(mean_rmse) <- c("Mean TB RMSE", "Mean PA RMSE")
+  colnames(median_rmse) <- c("Median TB RMSE", "Median PA RMSE")
+  colnames(mode_rmse) <- c("Mode TB RMSE", "Mode PA RMSE")
+  colnames(mtsdi_rmse) <- c("Mtsdi TB RMSE", "Mtsdi PA RMSE")
+  colnames(lin_rmse) <- c("Lin TB RMSE", "Lin PA RMSE")
+  colnames(spline_rmse) <- c("Spline TB RMSE", "Spline PA RMSE")
+  colnames(stine_rmse) <- c("Stine TB RMSE", "Stine PA RMSE")
+  colnames(kalman_rmse) <- c("Kalman TB RMSE", "Kalman PA RMSE")
+  colnames(locf_rmse) <- c("Locf TB RMSE", "Locf PA RMSE")
+  colnames(nocb_rmse) <- c("Nocb TB RMSE", "Nocb PA RMSE")
+  colnames(mice_rmse_pmm) <- c("Mice pmm TB RMSE", "Mice pmm PA RMSE")
+  colnames(mice_rmse_norm) <- c("Mice norm TB RMSE", "Mice norm PA RMSE")
+  colnames(mice_rmse_norm.nob) <- c("Mice norm.nob TB RMSE", "Mice norm.nob PA RMSE")
+
+  elements <- c("TB", "PA", "DIR", "FF1", "W1")
+  for(i in 1:n){
+    # First the imputation for each method
+    # Mean
+    mean_imp_list[[i]][which(is.na(mean_imp_list[[i]]$TB)),]["TB"] <- mean(mean_imp_list[[i]]$TB, na.rm = TRUE)
+    mean_imp_list[[i]][which(is.na(mean_imp_list[[i]]$PA)),]["PA"] <- mean(mean_imp_list[[i]]$PA, na.rm = TRUE)
+
+    # Median
+    median_imp_list[[i]][which(is.na(median_imp_list[[i]]$TB)),]["TB"] <- median(median_imp_list[[i]]$TB, na.rm = TRUE)
+    median_imp_list[[i]][which(is.na(median_imp_list[[i]]$PA)),]["PA"] <- median(median_imp_list[[i]]$PA, na.rm = TRUE)
+
+    # Mode
+    mode_imp_list[[i]][which(is.na(mode_imp_list[[i]]$TB)),]["TB"] <- which.max(tabulate(mode_imp_list[[i]]$TB))
+    mode_imp_list[[i]][which(is.na(mode_imp_list[[i]]$PA)),]["PA"] <- which.max(tabulate(mode_imp_list[[i]]$PA))
+    # Smart mean
+    
+    # mtsdi
+    mtsdi_impute[[i]] <- mnimput(formula = ~TB+PA, dataset = mtsdi_imp_list[[i]], ts = TRUE)
+    mtsdi_imp_list[[i]] <- predict(mtsdi_impute[[i]])
+    mtsdi_imp_list[[i]]$YYYY <- weather_missing$YYYY
+    mtsdi_imp_list[[i]]$M <- weather_missing$M
+    mtsdi_imp_list[[i]]$D <- weather_missing$D
+    mtsdi_imp_list[[i]]$H <- weather_missing$H
+    mtsdi_imp_list[[i]]$DATE <- weather_missing$DATE
+    mtsdi_imp_list[[i]]$DIR <- weather_missing$DIR
+    mtsdi_imp_list[[i]]$FF1 <- weather_missing$FF1
+    mtsdi_imp_list[[i]]$W1 <- weather_missing$W1
+
+    # Linear interpolation
+    lin_imp_list[[i]]["TB"] <- na_interpolation(lin_imp_list[[i]]$TB, option = "linear")
+    lin_imp_list[[i]]["PA"] <- na_interpolation(lin_imp_list[[i]]$PA, option = "linear")
+
+    # Spline interpolation
+    spline_imp_list[[i]]["TB"] <- na_interpolation(lin_imp_list[[i]]$TB, option = "spline")
+    spline_imp_list[[i]]["PA"] <- na_interpolation(lin_imp_list[[i]]$PA, option = "spline")
+
+    # Stine interpolation
+    stine_imp_list[[i]]["TB"] <- na_interpolation(lin_imp_list[[i]]$TB, option = "stine")
+    stine_imp_list[[i]]["PA"] <- na_interpolation(lin_imp_list[[i]]$PA, option = "stine")
+
+    # Kalman
+    kalman_imp_list[[i]]["TB"] <- na_kalman(kalman_imp_list[[i]]$TB, model = "StructTS", smooth = TRUE, type = "trend")
+    kalman_imp_list[[i]]["PA"] <- na_kalman(kalman_imp_list[[i]]$PA, model = "StructTS", smooth = TRUE, type = "trend")
+
+    # Last observation carried forward
+    locf_imp_list[[i]]["TB"] <- na_locf(locf_imp_list[[i]]$TB)
+    locf_imp_list[[i]]["PA"] <- na_locf(locf_imp_list[[i]]$PA)
+
+    # Next observation carried backward
+    nocb_imp_list[[i]]["TB"] <- na_locf(nocb_imp_list[[i]]$TB, option = "nocb")
+    nocb_imp_list[[i]]["PA"] <- na_locf(nocb_imp_list[[i]]$PA, option = "nocb")
+    
+    # mice 
+    mice_imputed_pmm[[i]] <- mice(mice_missing[[i]], m = 5, method = "pmm", seed = i)
+    mice_imputed_pmm[[i]] <- complete(mice_imputed_pmm[[i]])
+
+    mice_imputed_norm[[i]] <- mice(mice_missing[[i]], m = 5, method = "norm", seed = i)
+    mice_imputed_norm[[i]] <- complete(mice_imputed_norm[[i]])
+
+    mice_imputed_norm.nob[[i]] <- mice(mice_missing[[i]], m = 5, method = "norm.nob", seed = i)
+    mice_imputed_norm.nob[[i]] <- complete(mice_imputed_norm.nob[[i]])
+
+    # Computing rmse for TB and PA
+    for(j in 1:2){
+      mean_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mean_imp_list[[i]][elements[j]])))^2))
+      median_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(median_imp_list[[i]][elements[j]])))^2))
+      mode_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mode_imp_list[[i]][elements[j]])))^2))
+      mtsdi_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mtsdi_imp_list[[i]][elements[j]])))^2))
+      lin_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(lin_imp_list[[i]][elements[j]])))^2))
+      spline_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(spline_imp_list[[i]][elements[j]])))^2))
+      stine_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(stine_imp_list[[i]][elements[j]])))^2))
+      kalman_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(kalman_imp_list[[i]][elements[j]])))^2))
+      locf_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(locf_imp_list[[i]][elements[j]])))^2))
+      nocb_rmse[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(nocb_imp_list[[i]][elements[j]])))^2))
+      mice_rmse_pmm[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mice_imputed_pmm[[i]][elements[j]])))^2))
+      mice_rmse_norm[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mice_imputed_norm[[i]][elements[j]])))^2))
+      mice_rmse_norm.nob[i,j] <- sqrt(mean((as.numeric(unlist(comp_data[elements[j]])) - as.numeric(unlist(mice_imputed_norm.nob[[i]][elements[j]])))^2))
+    }
+  }
+  return(list(mean_rmse, median_rmse, mode_rmse, mtsdi_rmse, lin_rmse, spline_rmse, stine_rmse, kalman_rmse, locf_rmse, nocb_rmse, mice_rmse_pmm, mice_rmse_norm, mice_rmse_norm.nob))
+}
+  
+errors_1 <- numeric_chunk(1,50) # Done
+save(errors_1, file="errors_1.RData")
+errors_2 <- numeric_chunk(51,100) # Done
+save(errors_2, file="errors_2.RData")
+errors_3 <- numeric_chunk(101,150) # Done
+save(errors_3, file="errors_3.RData")
+errors_4 <- numeric_chunk(151,200) # Done
+save(errors_4, file="errors_4.RData")
+errors_5 <- numeric_chunk(201,250) # Done 
+save(errors_5, file="errors_5.RData")
+errors_6 <- numeric_chunk(251,300) # Done 
+save(errors_6, file="errors_6.RData")
+errors_7 <- numeric_chunk(301,350) # Done
+save(errors_7, file="errors_7.RData")
+errors_8 <- numeric_chunk(351,400) # Done
+save(errors_8, file="errors_8.RData")
+errors_9 <- numeric_chunk(401,450) # Done
+save(errors_9, file="errors_9.RData")
+errors_10 <- numeric_chunk(451,500) # Done
+save(errors_10, file="errors_10.RData")
+errors_11 <- numeric_chunk(501,550) # Done
+save(errors_11, file="errors_11.RData")
+errors_12 <- numeric_chunk(551,600) # Done
+save(errors_12, file="errors_12.RData")
+errors_13 <- numeric_chunk(601,650) # Done
+save(errors_13, file="errors_13.RData")
+errors_14 <- numeric_chunk(651,700) # Done
+save(errors_14, file="errors_14.RData")
+errors_15 <- numeric_chunk(701,750) # Done
+save(errors_15, file="errors_15.RData")
+errors_16 <- numeric_chunk(751,800) # Done
+save(errors_16, file="errors_16.RData")
+errors_17 <- numeric_chunk(801,850) # Done
+save(errors_17, file="errors_17.RData")
+errors_18 <- numeric_chunk(851,900) # Done
+save(errors_18, file="errors_18.RData")
+errors_19 <- numeric_chunk(901,950)
+save(errors_19, file="errors_19.RData")
+errors_20 <- numeric_chunk(951,1000)
+save(errors_20, file="errors_20.RData")
+
+error_list <- vector(mode = "list", length = 13)
+for(i in 1:13){
+error_list[[i]] <-  as.matrix(rbind(errors_1[[i]], errors_2[[i]], errors_3[[i]], errors_4[[i]], errors_5[[i]], errors_6[[i]], errors_7[[i]], errors_8[[i]], errors_9[[i]], errors_10[[i]], errors_11[[i]], errors_12[[i]], errors_13[[i]], errors_14[[i]]))    
+}
+
+mean_per_method <- function(){
+  n_methods <- 13
+  means <- matrix(NA, nrow = n_methods, ncol = 2)
+  rownames(means) <- c("Mean", "Median", "Mode", "Mtsdi", "Lin", "Spline", "Stine", "Kalman", "Locf", "Nocb", "Mice pmm", "Mice norm", "Mice norm.nob")
+  colnames(means) <- c("TB mean RMSE", "PA mean RMSE")
+  for(i in 1:n_methods){
+    for(j in 1:2)
+      means[i,j] <- mean(error_list[[i]][,j])
+  }  
+  return(means)
+}
+
+mean_per_method()
+```

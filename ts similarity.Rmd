@@ -1,0 +1,199 @@
+---
+title: "ts similarity"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Packages
+```{r}
+library("stringr")           
+library("tidyverse")
+library("imputeTS")
+library("ggpubr")
+library("MASS")
+library("finalfit")
+library("TSdist")
+library("trend")
+library("forecast")
+library("funtimes")
+library("lubridate")
+```
+
+Weather data
+```{r}
+weather_1 <- read.csv("hourly_weather_1.csv", sep = ";")
+weather_2 <- read.csv("hourly_weather_2.csv", sep = ";")
+weather_1 <- weather_1[which(weather_1$YYYY >= 1856),]
+weather_2 <- weather_2[which(weather_2$YYYY <= 1904),]
+weather_1["FF2"] <- NULL
+weather_2["FF2"] <- NULL
+weather_1["W2"] <- NULL
+weather_2["W2"] <- NULL
+
+# combining the two df's
+weather_full <- rbind(weather_1, weather_2)
+
+# Give full date column
+weather_full$DATE <- ISOdate(weather_full[,1], weather_full[,2], weather_full[,3], weather_full[,4])
+str_remove_all(weather_full$DATE, "[GMT]")
+
+# Changing the formatting
+weather_full$TA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TA)))
+weather_full$TB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TB)))
+weather_full$PA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PA)))
+weather_full$PB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PB)))
+
+# Setting the -9999 values to NA
+weather_full[weather_full == -9999] <- NA
+
+# Largest complete series
+weather_full$DIR <- as.factor(weather_full$DIR)
+weather_full$FF1 <- as.factor(weather_full$FF1)
+weather_full$W1 <- as.factor(weather_full$W1)
+comp_data <- weather_full[which(weather_full$YYYY >= 1889 & weather_full$YYYY <= 1904),]
+full_data <- comp_data
+comp_data$TA <- NULL
+comp_data$PB <- NULL
+```
+
+```{r}
+# Sliding window similarity comparison for time series with unequal lengths
+sliding_window <- function(){
+  # Set empty list with length equal to amount of data windows
+  # The reduced data is at the end of the full data, which goes from 1889-1904
+  # So we do not need to use that, but only look at data from 1856-1888
+  windows <- vector(mode = "list", length = length(1856:1888))  
+  years <- unique(weather_full$YYYY)
+  years <- years[-c(which(years == 1889):length(years))]
+  start_idx <- numeric(length(years))
+  for(i in 1:length(years)){
+    start_idx[i] <- min(which(weather_full$YYYY == years[i]))
+    # Create the new datasets from the yearly starting point until  nrow(T_reduced) later
+    windows[[i]] <- weather_full[start_idx[i]:(start_idx[i]+nrow(comp_data)-1),]
+  }
+  return(windows)
+}
+
+sliding_window_dat <- sliding_window()
+
+# Define cosine simliarity
+cosine_sim <- function(x, y){
+  theta <- acos((sum(x * y))/(sqrt(sum(x^2)) * sqrt(sum(y^2))))
+  theta <- theta*(180/pi)
+  sim <- 1 - (theta/180) 
+  return(sim)
+}
+
+imputed_sliding_window <- sliding_window_dat
+for(i in 1:33){
+  imputed_sliding_window[[i]] <- na_interpolation(imputed_sliding_window[[i]], option = "linear")
+}
+
+# Simulation to show that dissimilarity grows as vectors get longer
+grid_dist <- c(10, 50, 100, 500, 1000, 5000, 10000)
+distance_dtw <- matrix(NA, nrow = 33, ncol = 7)
+distance_euclid <- matrix(NA, nrow = 33, ncol = 7)
+distance_norm_euclid <- matrix(NA, nrow = 33, ncol = 7)
+distance_cor <- matrix(NA, nrow = 33, ncol = 7)
+distance_cos <- matrix(NA, nrow = 33, ncol = 7)
+# Maybe add Cross correlation and relate to new articles
+
+for(i in 1:33){
+  for(j in 1:7){
+    distance_dtw[i,j] <- DTWDistance(comp_data$TB[1:grid_dist[j]], imputed_sliding_window[[i]]$TB[1:grid_dist[j]])
+    distance_euclid[i,j] <- EuclideanDistance(comp_data$TB[1:grid_dist[j]], imputed_sliding_window[[i]]$TB[1:grid_dist[j]])
+    distance_cos[i,j] <- cosine_sim(comp_data$TB[1:grid_dist[j]], imputed_sliding_window[[i]]$TB[1:grid_dist[j]])
+  }
+}
+colMeans(distance_dtw)
+colMeans(distance_euclid)
+colMeans(distance_cor)
+colMeans(distance_cos)
+
+sim_df <- as.data.frame(rbind(cbind(colMeans(distance_dtw)), cbind(colMeans(distance_euclid)), cbind(colMeans(distance_cor)), cbind(1-colMeans(distance_cos))))
+colnames(sim_df) <- c("Value")
+sim_df$Measure <- cbind(rep(c("DTW", "Euclidean", "Correlation", "Cosine"), each = 7))
+sim_df$Measure <- as.factor(sim_df$Measure)
+sim_df$Length <- cbind(rep(c(10, 50, 100, 500, 1000, 5000, 10000), 4))
+  
+ggplot() + 
+  geom_line(data = sim_df, aes(x = Length, y = Value, color = Measure)) +
+  labs(x = "Vector length") +
+  labs(y = "Dissimilarity") +
+  labs(title = "Growing dissimilarities")
+
+# Computing cosine similarities
+cos_sim_tb <- numeric(33)
+cos_sim_pa <- numeric(33)
+for(i in 1:33){
+  cos_sim_tb[i] <- cosine_sim(comp_data$TB, imputed_sliding_window[[i]]$TB)
+  cos_sim_pa[i] <- cosine_sim(comp_data$PA, imputed_sliding_window[[i]]$PA)
+}
+mean(cos_sim_tb)
+mean(cos_sim_pa)
+
+# Computing DTW and Euclidean similarities
+max_dist_idx_tb <- numeric(33)
+max_dist_idx_pa <- numeric(33)
+max_dist_dtw_tb <- numeric(33)
+max_dist_dtw_pa <- numeric(33)
+max_dist_euc_tb <- numeric(33)
+max_dist_euc_pa <- numeric(33)
+dtw_sim_tb <- matrix(NA, nrow = nrow(comp_data), ncol = 33)
+dtw_sim_pa <- matrix(NA, nrow = nrow(comp_data), ncol = 33)
+euc_sim_tb <- matrix(NA, nrow = nrow(comp_data), ncol = 33)
+euc_sim_pa <- matrix(NA, nrow = nrow(comp_data), ncol = 33)
+
+for(i in 1:nrow(comp_data)){
+  for(j in 1:33){
+    max_dist_idx_tb[j] <- which.max(abs(imputed_sliding_window[[j]]$TB - comp_data$TB))
+    max_dist_idx_pa[j] <- which.max(abs(imputed_sliding_window[[j]]$PA - comp_data$PA))
+
+    max_dist_dtw_tb[j] <- DTWDistance(imputed_sliding_window[[j]]$TB[max_dist_idx_tb[j]], comp_data$TB[max_dist_idx_tb[j]])
+    dtw_sim_tb[i,j] <-  1-(DTWDistance(imputed_sliding_window[[j]]$TB[i], comp_data$TB[i])/max_dist_dtw_tb[j])
+      
+    max_dist_dtw_pa[j] <- DTWDistance(imputed_sliding_window[[j]]$PA[max_dist_idx_pa[j]], comp_data$PA[max_dist_idx_pa[j]])
+    dtw_sim_pa[i,j] <-  1-(DTWDistance(imputed_sliding_window[[j]]$PA[i], comp_data$PA[i])/max_dist_dtw_pa[j])
+
+    max_dist_euc_tb[j] <- EuclideanDistance(imputed_sliding_window[[j]]$TB[max_dist_idx_tb[j]], comp_data$TB[max_dist_idx_tb[j]])
+    euc_sim_tb[i,j] <-  1-(EuclideanDistance(imputed_sliding_window[[j]]$TB[i], comp_data$TB[i])/max_dist_euc_tb[j])
+    
+    max_dist_euc_pa[j] <- EuclideanDistance(imputed_sliding_window[[j]]$PA[max_dist_idx_pa[j]], comp_data$PA[max_dist_idx_pa[j]])
+    euc_sim_pa[i,j] <-  1-(EuclideanDistance(imputed_sliding_window[[j]]$PA[i], comp_data$PA[i])/max_dist_euc_pa[j])
+  }
+}
+
+dtw_tb_rowmeans <- rowMeans(dtw_sim_tb)
+save(dtw_tb_rowmeans, file="dtw_tb_rowmeans.RData")
+euc_tb_rowmeans <- rowMeans(euc_sim_tb)
+save(euc_tb_rowmeans, file="euc_tb_rowmeans.RData")
+dtw_pa_rowmeans <- rowMeans(dtw_sim_pa)
+save(dtw_pa_rowmeans, file="dtw_pa_rowmeans.RData")
+euc_pa_rowmeans <- rowMeans(euc_sim_pa)
+save(euc_pa_rowmeans, file="euc_pa_rowmeans.RData")
+
+tb_sim_df <- as.data.frame(rbind(cbind(dtw_tb_rowmeans), cbind(euc_tb_rowmeans)))
+tb_sim_df <- cbind(tb_sim_df, rep(comp_data$DATE, 2))
+tb_sim_df <- cbind(tb_sim_df, rbind(cbind(rep("DTW", nrow(comp_data))), cbind(rep("Euclidean", nrow(comp_data)))))
+colnames(tb_sim_df) <- c("Similarity", "Date", "Measure")
+pa_sim_df <- as.data.frame(rbind(cbind(dtw_pa_rowmeans), cbind(euc_pa_rowmeans)))
+pa_sim_df <- cbind(pa_sim_df, rep(comp_data$DATE, 2))
+pa_sim_df <- cbind(pa_sim_df, rbind(cbind(rep("DTW", nrow(comp_data))), cbind(rep("Euclidean", nrow(comp_data)))))
+colnames(pa_sim_df) <- c("Similarity", "Date", "Measure")
+
+ggplot(tb_sim_df, aes(x=Date, y=Similarity, group=Measure)) +
+  geom_line(aes(color=Measure))+
+  labs(y = "Similarity") +
+  labs(title = "Temperature similarity comparison")
+
+ggplot(pa_sim_df, aes(x=Date, y=Similarity, group=Measure)) +
+  geom_line(aes(color=Measure))+
+  labs(y = "Similarity") +
+  labs(title = "Air pressure similarity comparison")
+```

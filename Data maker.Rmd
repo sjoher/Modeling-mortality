@@ -1,0 +1,1210 @@
+---
+title: "Data maker"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Packages
+```{r}
+library("stringr")           
+library("tidyverse")
+library("mtsdi")
+library("imputeTS")
+library("ggpubr")
+library("MASS")
+library("finalfit")
+#library("TSdist")
+library("trend")
+library("tseries")
+library("lubridate") 
+library("mice")
+library("forecast")
+library("tseries")
+library("seastests")
+library("tscount")
+library("readxl")
+library("writexl")
+library("DemoTools")
+library("RColorBrewer")
+library("tscount")
+library("glarma")
+library("mgcv")
+library("stlplus")
+library("qqplotr")
+library("latex2exp")
+library("seastests")
+library("forestplot")
+```
+
+The code
+```{r}
+##########################################################################################################################
+######################################################## COD data ########################################################
+##########################################################################################################################
+setwd("~/Documents/Master statistiek/Jaar 2/Scriptie/Code")
+COD_data <- read.csv("data_1854-1904.csv", sep = ";")
+
+pre_1856 <- which(COD_data$jaar < 1856)
+COD_data <- COD_data[-pre_1856,]
+
+# Our population consists of those who and died in Amsterdam and may or may not have been registered there to be consistent with the jaarboeken
+COD_data <- COD_data[-c(which(COD_data$eldersoverleden ==1)),]
+stillbirths <- COD_data[COD_data$LeeftijdJaar == "0",]
+COD_data <- COD_data[-which(COD_data$LeeftijdJaar == "0"),]
+COD_data <- COD_data[COD_data$ICD10h1 != "P95.000",]
+COD_data <- COD_data[COD_data$ICD10h2 != "P95.000",]
+
+COD_data[which(COD_data$maandnr < 10),]["maandnr"] <- sapply(COD_data[which(COD_data$maandnr < 10),]["maandnr"], function(x) paste("0", x, sep = ""))
+COD_data[which(COD_data$dag < 10),]["dag"] <- sapply(COD_data[which(COD_data$dag < 10),]["dag"], function(x) paste("0", x, sep = ""))
+COD_data$jaar <- as.character(COD_data$jaar)
+COD_data$Date <- as.Date(paste(COD_data$jaar, COD_data$maandnr, COD_data$dag, sep = "-"), "%Y-%m-%d")
+
+COD_data[which(is.na(COD_data$Date)),]["dag"] <- as.character(1)
+COD_data[which(is.na(COD_data$Date)),]["dag"] <- sapply(COD_data[which(is.na(COD_data$Date)),]["dag"], function(x) paste("0", x, sep = ""))
+COD_data$Date <- as.Date(paste(COD_data$jaar, COD_data$maandnr, COD_data$dag, sep = "-"), "%Y-%m-%d")
+
+set.seed(2021)
+COD_data[which(is.na(COD_data$Date)),]["maandnr"] <- sample(unique(COD_data$maandnr)[-13], 4)
+COD_data$Date <- as.Date(paste(COD_data$jaar, COD_data$maandnr, COD_data$dag, sep = "-"), "%Y-%m-%d")
+
+inf_idx_h1 <- which(COD_data$ICD10h2 == "",)
+inf_idx_h1_h2 <- which(COD_data$ICD10h2 != "" & COD_data$ICD10h2 != "" & COD_data$ICD10h3 == "",)
+inf_idx_h1_h2_h3 <- which(COD_data$ICD10h2 != "" & COD_data$ICD10h3 != "" & COD_data$ICD10h4 == "",)
+inf_idx_h1_h2_h3_h4 <- which(COD_data$ICD10h2 != "" & COD_data$ICD10h3 != "" & COD_data$ICD10h4 != "",)
+
+set.seed(2021)
+COD_data$final_inf <- 0
+COD_data$final_eng <- NA
+COD_data$final_level <- NA
+COD_data[inf_idx_h1,"final_inf"] <- 67
+COD_data[inf_idx_h1_h2,"final_inf"] <- sample(c(67, 72), length(inf_idx_h1_h2), replace = TRUE, prob = c(1/2, 1/2))
+COD_data[inf_idx_h1_h2_h3,"final_inf"] <- sample(c(67, 72, 77), length(inf_idx_h1_h2_h3), replace = TRUE, prob = c(1/3, 1/3, 1/3))
+COD_data[inf_idx_h1_h2_h3_h4,"final_inf"] <- sample(c(67, 72, 77, 82), length(inf_idx_h1_h2_h3_h4), replace = TRUE, prob = c(1/4, 1/4, 1/4, 1/4))
+
+COD_67 <- which(COD_data$final_inf == 67)
+COD_72 <- which(COD_data$final_inf == 72)
+COD_77 <- which(COD_data$final_inf == 77)
+COD_82 <- which(COD_data$final_inf == 82)
+
+COD_data[COD_67, 116] <- COD_data[COD_67, 68]
+COD_data[COD_67, 117] <- COD_data[COD_67, 69]
+COD_data[COD_67, 115] <- COD_data[COD_67, 67]
+COD_data[COD_72, 116] <- COD_data[COD_72, 73]
+COD_data[COD_72, 117] <- COD_data[COD_72, 74]
+COD_data[COD_72, 115] <- COD_data[COD_72, 72]
+COD_data[COD_77, 116] <- COD_data[COD_77, 78]
+COD_data[COD_77, 117] <- COD_data[COD_77, 79]
+COD_data[COD_77, 115] <- COD_data[COD_77, 77]
+COD_data[COD_82, 116] <- COD_data[COD_82, 83]
+COD_data[COD_82, 117] <- COD_data[COD_82, 84]
+COD_data[COD_82, 115] <- COD_data[COD_82, 82]
+
+COD_data$final_inf <- as.factor(COD_data$final_inf)
+COD_data$final_eng <- as.factor(COD_data$final_eng)
+COD_data$final_level <- as.factor(COD_data$final_level)
+
+
+# Calculate missing deaths 
+# Use all years except 1994 and 1999
+relevant_years <- unique(COD_data$jaar)[-c(37, 42)]
+
+deathcounter_jul <- numeric(45)
+deathcounter_aug <- numeric(45)
+deathcounter_sept <- numeric(45)
+for(i in 1:45){
+  deathcounter_jul[i] <- nrow(COD_data[COD_data$maandnr == "07" & COD_data$jaar == relevant_years[i],])
+  deathcounter_aug[i] <- nrow(COD_data[COD_data$maandnr == "08" & COD_data$jaar == relevant_years[i],])
+  deathcounter_sept[i] <- nrow(COD_data[COD_data$maandnr == "09" & COD_data$jaar == relevant_years[i],])
+}
+
+deathcounter <- numeric(47)
+for(i in 1:47){
+  deathcounter[i] <- length(which(COD_data$jaar == unique(COD_data$jaar)[i]))
+}
+deathcounter <- deathcounter[-c(37,42)]
+
+frac_jul <- numeric(45)
+frac_aug <- numeric(45)
+frac_sept <- numeric(45)
+for(i in 1:45){
+  frac_jul[i] <- (deathcounter_jul[i]/deathcounter[i])
+  frac_aug[i] <- (deathcounter_aug[i]/deathcounter[i])
+  frac_sept[i] <- (deathcounter_sept[i]/deathcounter[i])
+}
+mean(frac_jul)*7944
+mean(frac_aug)*7944
+mean(frac_sept)*7944
+
+COD_data$LeeftijdJaar <- as.numeric(gsub("," , ".", COD_data$LeeftijdJaar))
+COD_NA <- COD_data
+COD_NA<- COD_NA[,c(8,9,11,114,38, 42,115,116,117)]
+COD_NA <- COD_NA[order(COD_NA$Date), ]
+COD_NA$jaar <- as.numeric(COD_NA$jaar)
+COD_NA$maandnr <- as.numeric(COD_NA$maandnr)
+COD_NA_1 <- COD_NA[COD_NA$jaar < 1892,]
+# Skip inbetween the years
+COD_NA_2 <- COD_NA[COD_NA$jaar >= 1894 & COD_NA$jaar < 1899,]
+COD_NA_2.5 <- COD_NA[COD_NA$jaar == 1899 & COD_NA$maandnr < 07,]
+COD_NA_2 <- rbind(COD_NA_2, COD_NA_2.5)
+COD_NA_3 <- COD_NA[COD_NA$jaar == 1899 & COD_NA$maandnr >= 10,]
+COD_NA_3.5 <- COD_NA[COD_NA$jaar > 1899,]
+COD_NA_3 <- rbind(COD_NA_3, COD_NA_3.5)
+# Create gap 
+COD_NA_2.5 <- as.data.frame(matrix(NA, nrow = round(mean(frac_jul)*7944+mean(frac_aug)*7944+mean(frac_sept)*7944), ncol = ncol(COD_NA)))
+NA_dates <- seq(as.Date("1899/07/01"), as.Date("1899/09/30"), 'days')
+dates_1899 <- sort(rep(NA_dates, length.out = 1777))
+COD_NA_2.5[,4] <- dates_1899
+#COD_NA_2.5[,1] <- 1899
+#COD_NA_2.5[,2] <- c(rep(7, length(1:618)), rep(8, length(619:1207)), rep(9, length(1208:1777)))
+colnames(COD_NA_2.5) <- colnames(COD_NA)
+
+# First data before the gap
+COD_pre_1892 <- COD_NA_1
+
+# Second data after the gap
+COD_post_1892 <- rbind(COD_NA_2, COD_NA_2.5, COD_NA_3)
+COD_post_1892 <- COD_post_1892[order(COD_post_1892$Date),]
+
+summary(COD_pre_1892$final_eng)
+summary(COD_pre_1892$final_level)[3]
+
+# Assign the various causes of death such that they are ready to be aggregated:
+COD_pre_1892$Bronchiolitis <- 0
+COD_pre_1892$Cancer <- 0
+COD_pre_1892$Cardiovascular <- 0
+COD_pre_1892$Croup <- 0
+COD_pre_1892$Diarrhea <- 0
+COD_pre_1892$Drowning <- 0
+COD_pre_1892$Measles <- 0
+COD_pre_1892$Meningitis <- 0
+COD_pre_1892$Old <- 0
+COD_pre_1892$Pneumonia <- 0
+COD_pre_1892$Stroke <- 0
+COD_pre_1892$Tuberculosis <- 0
+COD_pre_1892$Typhus <- 0
+COD_pre_1892$Whooping_cough <- 0
+COD_pre_1892$All_cause_mortality <- 1
+COD_pre_1892$Bronchiolitis_man <- 0
+COD_pre_1892$Bronchiolitis_woman <- 0
+COD_pre_1892$Cancer_man <- 0
+COD_pre_1892$Cancer_woman <- 0
+COD_pre_1892$Cardiovascular_man <- 0
+COD_pre_1892$Cardiovascular_woman <- 0
+COD_pre_1892$Croup_man <- 0
+COD_pre_1892$Croup_woman <- 0
+COD_pre_1892$Diarrhea_man <- 0
+COD_pre_1892$Diarrhea_woman <- 0
+COD_pre_1892$Drowning_man <- 0
+COD_pre_1892$Drowning_woman <- 0
+COD_pre_1892$Measles_man <- 0
+COD_pre_1892$Measles_woman <- 0
+COD_pre_1892$Meningitis_man <- 0
+COD_pre_1892$Meningitis_woman <- 0
+COD_pre_1892$Old_man <- 0
+COD_pre_1892$Old_woman <- 0
+COD_pre_1892$Pneumonia_man <- 0
+COD_pre_1892$Pneumonia_woman <- 0
+COD_pre_1892$Stroke_man <- 0
+COD_pre_1892$Stroke_woman <- 0
+COD_pre_1892$Tuberculosis_man <- 0
+COD_pre_1892$Tuberculosis_woman <- 0
+COD_pre_1892$Typhus_man <- 0
+COD_pre_1892$Typhus_woman <- 0
+COD_pre_1892$Whooping_cough_man <- 0
+COD_pre_1892$Whooping_cough_woman <- 0
+COD_pre_1892$Acm_man <- 0
+COD_pre_1892$Acm_woman <- 0
+
+# Create indices corresponding to COD's
+Bronchiolitis_idx <- sort(c(which(COD_pre_1892$final_inf == "J21.901" | COD_pre_1892$final_inf == "J20.900")))
+Cancer_idx <- c(grep("cancer", COD_pre_1892$final_eng))
+Cardiovascular_idx <- sort(c(which(COD_pre_1892$final_inf == "I38.000" | COD_pre_1892$final_inf == "I51.900" | COD_pre_1892$final_inf == "R12.000" | COD_pre_1892$final_inf == "I51.700" | COD_pre_1892$final_inf == "I31.300" | COD_pre_1892$final_inf == "I38.001" | COD_pre_1892$final_inf == "I00.000" | COD_pre_1892$final_inf == "G46.800" | COD_pre_1892$final_inf == "I31.901" | COD_pre_1892$final_inf == "K55.001" | COD_pre_1892$final_inf == "I50.901" | COD_pre_1892$final_inf == "I50.000" | COD_pre_1892$final_inf == "I21.901" | COD_pre_1892$final_inf == "I01.000" | COD_pre_1892$final_inf == "I09.100" | COD_pre_1892$final_inf == "I50.100" | COD_pre_1892$final_inf == "I09.900" | COD_pre_1892$final_inf == "Q24.901" | COD_pre_1892$final_inf == "I40.900" | COD_pre_1892$final_inf == "I39.100" | COD_pre_1892$final_inf == "I25.000" | COD_pre_1892$final_inf == "I51.400" | COD_pre_1892$final_inf == "I01.100" | COD_pre_1892$final_inf == "I27.900" | COD_pre_1892$final_inf == "I21.904" | COD_pre_1892$final_inf == "I51.500" | COD_pre_1892$final_inf == "R00.200" | COD_pre_1892$final_inf == "I33.900" | COD_pre_1892$final_inf == "I51.300" | COD_pre_1892$final_inf == "I67.200" | COD_pre_1892$final_inf == "I67.600")))
+Croup_idx <- sort(c(which(COD_pre_1892$final_inf == "J05.000" | COD_pre_1892$final_inf ==  "J05.100" | COD_pre_1892$final_inf == "A36.202")))
+Diarrhea_idx <- sort(c(which(COD_pre_1892$final_inf == "A09.001"), which(COD_pre_1892$final_inf == "A09.002"), which(COD_pre_1892$final_inf == "A09.004"), which(COD_pre_1892$final_inf == "A09.008"), which(COD_pre_1892$final_inf == "A09.009"), which(COD_pre_1892$final_inf == "K00.700" | COD_pre_1892$final_inf == "K00.800"), which(COD_pre_1892$final_inf == "K30.000" | COD_pre_1892$final_inf == "K30.001")))
+Drowning_idx <- sort(c(which(COD_pre_1892$final_inf == "W74.000" | COD_pre_1892$final_inf == "T75.100" | COD_pre_1892$final_inf == "W65.000"  | COD_pre_1892$final_inf == "W69.000")))
+Measles_idx <- sort(c(which(COD_pre_1892$final_inf == "B05.900" | COD_pre_1892$final_inf == "B05.201" | COD_pre_1892$final_inf == "B05.200" | COD_pre_1892$final_inf == "B05.202" | COD_pre_1892$final_inf == "B05.100" | COD_pre_1892$final_inf == "B05.800" | COD_pre_1892$final_inf == "B05.203" | COD_pre_1892$final_inf == "B05.400" | COD_pre_1892$final_inf == "B05.000" | COD_pre_1892$final_inf == "B05.802" | COD_pre_1892$final_inf == "B05.801")))
+Meningitis_idx <- sort(c(which(COD_pre_1892$final_inf == "G03.100" | COD_pre_1892$final_inf == "G03.800" | COD_pre_1892$final_inf == "G03.900")))
+Old_idx <- sort(c(which(COD_pre_1892$final_inf == "R53.005" | COD_pre_1892$final_inf == "E41.000" | COD_pre_1892$final_inf == "R53.001" | COD_pre_1892$final_inf == "R54.001" | COD_pre_1892$final_inf == "R64.002" | COD_pre_1892$final_inf == "R53.007" | COD_pre_1892$final_inf == "R53.002" | COD_pre_1892$final_inf == "R54.005" | COD_pre_1892$final_inf == "R53.006" | COD_pre_1892$final_inf == "R53.003" | COD_pre_1892$final_inf == "R54.000" | COD_pre_1892$final_inf == "I70.200" | COD_pre_1892$final_inf == "R54.003" | COD_pre_1892$final_inf == "R54.002")))
+Pneumonia_idx <- sort(c(which(COD_pre_1892$final_inf == "J18.000" | COD_pre_1892$final_inf == "J18.100" | COD_pre_1892$final_inf == "J18.800" | COD_pre_1892$final_inf == "J18.900")))
+Stroke_idx <- sort(c(which(COD_pre_1892$final_inf == "I64.000" | COD_pre_1892$final_inf == "I64.001" | COD_pre_1892$final_inf == "R09.201")))
+Tuberculosis_idx <- sort(c(which(COD_pre_1892$final_inf == "A15.500" | COD_pre_1892$final_inf == "A16.200" | COD_pre_1892$final_inf == "A16.400" | COD_pre_1892$final_inf == "A16.401" | COD_pre_1892$final_inf == "A16.901" | COD_pre_1892$final_inf == "A16.902" | COD_pre_1892$final_inf == "A16.903" | COD_pre_1892$final_inf == "A16.904" | COD_pre_1892$final_inf == "A16.905" | COD_pre_1892$final_inf == "A16.906" | COD_pre_1892$final_inf == "A16.908")))
+Tyhpus_idx <- sort(c(which(COD_pre_1892$final_inf == "A75.900" | COD_pre_1892$final_inf == "A75.901")))
+Whooping_cough_idx <- sort(c(which(COD_pre_1892$final_inf == "A37.900" | COD_pre_1892$final_inf == "A37.901")))
+
+# Assign the counts
+COD_pre_1892[Bronchiolitis_idx,]["Bronchiolitis"] <- 1
+COD_pre_1892[Cancer_idx,]["Cancer"] <- 1
+COD_pre_1892[Cardiovascular_idx,]["Cardiovascular"] <- 1
+COD_pre_1892[Croup_idx,]["Croup"] <- 1
+COD_pre_1892[Diarrhea_idx,]["Diarrhea"] <- 1
+COD_pre_1892[Drowning_idx,]["Drowning"] <- 1
+COD_pre_1892[Measles_idx,]["Measles"] <- 1
+COD_pre_1892[Meningitis_idx,]["Meningitis"] <- 1
+COD_pre_1892[Old_idx,]["Old"] <- 1
+COD_pre_1892[Pneumonia_idx,]["Pneumonia"] <- 1
+COD_pre_1892[Stroke_idx,]["Stroke"] <- 1
+COD_pre_1892[Tuberculosis_idx,]["Tuberculosis"] <- 1
+COD_pre_1892[Tyhpus_idx,]["Typhus"] <- 1
+COD_pre_1892[Whooping_cough_idx,]["Whooping_cough"] <- 1
+
+# Age groups
+COD_pre_1892$Age_1 <- 0
+COD_pre_1892$Age_1_5 <- 0
+COD_pre_1892$Age_5_15 <- 0
+COD_pre_1892$Age_15_20 <- 0
+COD_pre_1892$Age_20_50 <- 0
+COD_pre_1892$Age_50_75 <- 0
+COD_pre_1892$Age_75 <- 0
+
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar < 1),]["Age_1"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 1 & COD_pre_1892$LeeftijdJaar < 5),]["Age_1_5"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 5 & COD_pre_1892$LeeftijdJaar < 15),]["Age_5_15"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 15 & COD_pre_1892$LeeftijdJaar < 20),]["Age_15_20"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 20 & COD_pre_1892$LeeftijdJaar < 50),]["Age_20_50"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 50 & COD_pre_1892$LeeftijdJaar < 75),]["Age_50_75"] <- 1
+COD_pre_1892[which(COD_pre_1892$LeeftijdJaar >= 75),]["Age_75"] <- 1
+
+# Make age group factor:
+COD_pre_1892$Age_group <- NA
+COD_pre_1892[COD_pre_1892$Age_1 == 1,]["Age_group"] <- "< 1"
+COD_pre_1892[COD_pre_1892$Age_1_5 == 1,]["Age_group"] <- "1-5"
+COD_pre_1892[COD_pre_1892$Age_5_15 == 1,]["Age_group"] <- "5-15"
+COD_pre_1892[COD_pre_1892$Age_15_20 == 1,]["Age_group"] <- "15-20"
+COD_pre_1892[COD_pre_1892$Age_20_50 == 1,]["Age_group"] <- "20-50"
+COD_pre_1892[COD_pre_1892$Age_50_75 == 1,]["Age_group"] <- "50-75"
+COD_pre_1892[COD_pre_1892$Age_75 == 1,]["Age_group"] <- ">= 75"
+COD_pre_1892$Age_group <- as.factor(COD_pre_1892$Age_group)
+
+# Combine age groups and diseases
+COD_pre_1892$Bronchiolitis_age <- 0
+COD_pre_1892$Cancer_age <- 0
+COD_pre_1892$Cardiovascular_age <- 0
+COD_pre_1892$Croup_age <- 0
+COD_pre_1892$Diarrhea_age <- 0
+COD_pre_1892$Drowning_age <- 0
+COD_pre_1892$Measles_age <- 0
+COD_pre_1892$Meningitis_age <- 0
+COD_pre_1892$Old_age <- 0
+COD_pre_1892$Pneumonia_age <- 0
+COD_pre_1892$Stroke_age <- 0
+COD_pre_1892$Tuberculosis_age <- 0
+COD_pre_1892$Typhus_age <- 0
+COD_pre_1892$Whooping_cough_age <- 0
+COD_pre_1892$acm_1 <- 0
+COD_pre_1892$acm_1_5 <- 0
+COD_pre_1892$acm_5_15 <- 0
+COD_pre_1892$acm_15_20 <- 0
+COD_pre_1892$acm_20_50 <- 0
+COD_pre_1892$acm_50_75 <- 0
+COD_pre_1892$acm_75 <- 0
+
+# Assigning values to combined age and disease
+COD_pre_1892[which(COD_pre_1892$Bronchiolitis == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5")),]["Bronchiolitis_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Cancer == 1 & (COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75")),]["Cancer_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Cardiovascular == 1 & (COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75")),]["Cardiovascular_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Croup == 1 & COD_pre_1892$Age_group == "1-5"),]["Croup_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Diarrhea == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5")),]["Diarrhea_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Drowning == 1 & (COD_pre_1892$Age_group == "5-15" | COD_pre_1892$Age_group == "15-20" | COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75")),]["Drowning_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Measles == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5")),]["Measles_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Meningitis == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5")),]["Meningitis_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Old == 1 & (COD_pre_1892$Age_group == "50-75" | COD_pre_1892$Age_group == ">= 75")),]["Old_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Pneumonia == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5" | COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75" | COD_pre_1892$Age_group == ">= 75")),]["Pneumonia_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Stroke == 1 & (COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75" | COD_pre_1892$Age_group == ">= 75")),]["Stroke_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Tuberculosis == 1 & (COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75")),]["Tuberculosis_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Typhus == 1 & (COD_pre_1892$Age_group == "20-50" | COD_pre_1892$Age_group == "50-75")),]["Typhus_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Whooping_cough == 1 & (COD_pre_1892$Age_group == "< 1" | COD_pre_1892$Age_group == "1-5")),]["Whooping_cough_age"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "< 1"),]["acm_1"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "1-5"),]["acm_1_5"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "5-15"),]["acm_5_15"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "15-20"),]["acm_15_20"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "20-50"),]["acm_20_50"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == "50-75"),]["acm_50_75"] <- 1
+COD_pre_1892[which(COD_pre_1892$Age_group == ">= 75"),]["acm_75"] <- 1
+
+
+# Man and women of the correct age who died to to specific causes of death:
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Bronchiolitis_age == 1), "Bronchiolitis_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Bronchiolitis_age == 1), "Bronchiolitis_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Cancer_age == 1), "Cancer_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Cancer_age == 1), "Cancer_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Cardiovascular_age == 1), "Cardiovascular_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Cardiovascular_age == 1), "Cardiovascular_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Croup_age == 1), "Croup_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Croup_age == 1), "Croup_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Diarrhea_age == 1), "Diarrhea_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Diarrhea_age == 1), "Diarrhea_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Drowning_age == 1), "Drowning_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Drowning_age == 1), "Drowning_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Measles_age == 1), "Measles_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Measles_age == 1), "Measles_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Meningitis_age == 1), "Meningitis_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Meningitis_age == 1), "Meningitis_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Old_age == 1), "Old_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Old_age == 1), "Old_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Pneumonia_age == 1), "Pneumonia_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Pneumonia_age == 1), "Pneumonia_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Stroke_age == 1), "Stroke_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Stroke_age == 1), "Stroke_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Tuberculosis_age == 1), "Tuberculosis_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Tuberculosis_age == 1), "Tuberculosis_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Typhus_age == 1), "Typhus_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Typhus_age == 1), "Typhus_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man" & COD_pre_1892$Whooping_cough_age == 1), "Whooping_cough_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw" & COD_pre_1892$Whooping_cough_age == 1), "Whooping_cough_woman"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "man"), "Acm_man"] <- 1 
+COD_pre_1892[which(COD_pre_1892$Geslacht == "vrouw"), "Acm_woman"] <- 1
+
+
+# Assign the various causes of death such that they are ready to be aggregated:
+COD_post_1892$Bronchiolitis <- 0
+COD_post_1892$Cancer <- 0
+COD_post_1892$Cardiovascular <- 0
+COD_post_1892$Croup <- 0
+COD_post_1892$Diarrhea <- 0
+COD_post_1892$Drowning <- 0
+COD_post_1892$Measles <- 0
+COD_post_1892$Meningitis <- 0
+COD_post_1892$Old <- 0
+COD_post_1892$Pneumonia <- 0
+COD_post_1892$Stroke <- 0
+COD_post_1892$Tuberculosis <- 0
+COD_post_1892$Typhus <- 0
+COD_post_1892$Whooping_cough <- 0
+COD_post_1892$All_cause_mortality <- 1
+COD_post_1892$Bronchiolitis_man <- 0
+COD_post_1892$Bronchiolitis_woman <- 0
+COD_post_1892$Cancer_man <- 0
+COD_post_1892$Cancer_woman <- 0
+COD_post_1892$Cardiovascular_man <- 0
+COD_post_1892$Cardiovascular_woman <- 0
+COD_post_1892$Croup_man <- 0
+COD_post_1892$Croup_woman <- 0
+COD_post_1892$Diarrhea_man <- 0
+COD_post_1892$Diarrhea_woman <- 0
+COD_post_1892$Drowning_man <- 0
+COD_post_1892$Drowning_woman <- 0
+COD_post_1892$Measles_man <- 0
+COD_post_1892$Measles_woman <- 0
+COD_post_1892$Meningitis_man <- 0
+COD_post_1892$Meningitis_woman <- 0
+COD_post_1892$Old_man <- 0
+COD_post_1892$Old_woman <- 0
+COD_post_1892$Pneumonia_man <- 0
+COD_post_1892$Pneumonia_woman <- 0
+COD_post_1892$Stroke_man <- 0
+COD_post_1892$Stroke_woman <- 0
+COD_post_1892$Tuberculosis_man <- 0
+COD_post_1892$Tuberculosis_woman <- 0
+COD_post_1892$Typhus_man <- 0
+COD_post_1892$Typhus_woman <- 0
+COD_post_1892$Whooping_cough_man <- 0
+COD_post_1892$Whooping_cough_woman <- 0
+COD_post_1892$Acm_man <- 0
+COD_post_1892$Acm_woman <- 0
+
+# Create indices corresponding to COD's
+Bronchiolitis_idx <- sort(c(which(COD_post_1892$final_inf == "J21.901" | COD_post_1892$final_inf == "J20.900")))
+Cancer_idx <- c(grep("cancer", COD_post_1892$final_eng))
+Cardiovascular_idx <- sort(c(which(COD_post_1892$final_inf == "I38.000" | COD_post_1892$final_inf == "I51.900" | COD_post_1892$final_inf == "R12.000" | COD_post_1892$final_inf == "I51.700" | COD_post_1892$final_inf == "I31.300" | COD_post_1892$final_inf == "I38.001" | COD_post_1892$final_inf == "I00.000" | COD_post_1892$final_inf == "G46.800" | COD_post_1892$final_inf == "I31.901" | COD_post_1892$final_inf == "K55.001" | COD_post_1892$final_inf == "I50.901" | COD_post_1892$final_inf == "I50.000" | COD_post_1892$final_inf == "I21.901" | COD_post_1892$final_inf == "I01.000" | COD_post_1892$final_inf == "I09.100" | COD_post_1892$final_inf == "I50.100" | COD_post_1892$final_inf == "I09.900" | COD_post_1892$final_inf == "Q24.901" | COD_post_1892$final_inf == "I40.900" | COD_post_1892$final_inf == "I39.100" | COD_post_1892$final_inf == "I25.000" | COD_post_1892$final_inf == "I51.400" | COD_post_1892$final_inf == "I01.100" | COD_post_1892$final_inf == "I27.900" | COD_post_1892$final_inf == "I21.904" | COD_post_1892$final_inf == "I51.500" | COD_post_1892$final_inf == "R00.200" | COD_post_1892$final_inf == "I33.900" | COD_post_1892$final_inf == "I51.300" | COD_post_1892$final_inf == "I67.200" | COD_post_1892$final_inf == "I67.600")))
+Croup_idx <- sort(c(which(COD_post_1892$final_inf == "J05.000" | COD_post_1892$final_inf ==  "J05.100" | COD_post_1892$final_inf == "A36.202")))
+Diarrhea_idx <- sort(c(which(COD_post_1892$final_inf == "A09.001" | COD_post_1892$final_inf == "A09.002" | COD_post_1892$final_inf == "A09.004" | COD_post_1892$final_inf == "A09.008" | COD_post_1892$final_inf == "A09.009" | COD_post_1892$final_inf == "K00.700" | COD_post_1892$final_inf == "K00.800" | COD_post_1892$final_inf == "K30.000" | COD_post_1892$final_inf == "K30.001")))
+Drowning_idx <- sort(c(which(COD_post_1892$final_inf == "W74.000" | COD_post_1892$final_inf == "T75.100" | COD_post_1892$final_inf == "W65.000" | COD_post_1892$final_inf == "W69.000")))
+Measles_idx <- sort(c(which(COD_post_1892$final_inf == "B05.900" | COD_post_1892$final_inf == "B05.201" | COD_post_1892$final_inf == "B05.200" | COD_post_1892$final_inf == "B05.202" | COD_post_1892$final_inf == "B05.100" | COD_post_1892$final_inf == "B05.800" | COD_post_1892$final_inf == "B05.203" | COD_post_1892$final_inf == "B05.400" | COD_post_1892$final_inf == "B05.000" | COD_post_1892$final_inf == "B05.802" | COD_post_1892$final_inf == "B05.801")))
+Meningitis_idx <- sort(c(which(COD_post_1892$final_inf == "G03.100" | COD_post_1892$final_inf == "G03.800" | COD_post_1892$final_inf == "G03.900")))
+Old_idx <- sort(c(which(COD_post_1892$final_inf == "R53.005" | COD_post_1892$final_inf == "E41.000" | COD_post_1892$final_inf == "R53.001" | COD_post_1892$final_inf == "R54.001" | COD_post_1892$final_inf == "R64.002" | COD_post_1892$final_inf == "R53.007" | COD_post_1892$final_inf == "R53.002" | COD_post_1892$final_inf == "R54.005" | COD_post_1892$final_inf == "R53.006" | COD_post_1892$final_inf == "R53.003" | COD_post_1892$final_inf == "R54.000" | COD_post_1892$final_inf == "I70.200" | COD_post_1892$final_inf == "R54.003" | COD_post_1892$final_inf == "R54.002")))
+Pneumonia_idx <- sort(c(which(COD_post_1892$final_inf == "J18.000" | COD_post_1892$final_inf == "J18.100" | COD_post_1892$final_inf == "J18.800" | COD_post_1892$final_inf == "J18.900")))
+Stroke_idx <- sort(c(which(COD_post_1892$final_inf == "I64.000" | COD_post_1892$final_inf == "I64.001" | COD_post_1892$final_inf == "R09.201")))
+Tuberculosis_idx <- sort(c(which(COD_post_1892$final_inf == "A15.500" | COD_post_1892$final_inf == "A16.200" | COD_post_1892$final_inf == "A16.400" | COD_post_1892$final_inf == "A16.401" | COD_post_1892$final_inf == "A16.901" | COD_post_1892$final_inf == "A16.902" | COD_post_1892$final_inf == "A16.903" | COD_post_1892$final_inf == "A16.904" | COD_post_1892$final_inf == "A16.905" | COD_post_1892$final_inf == "A16.906" | COD_post_1892$final_inf == "A16.908")))
+Tyhpus_idx <- sort(c(which(COD_post_1892$final_inf == "A75.900" | COD_post_1892$final_inf == "A75.901")))
+Whooping_cough_idx <- sort(c(which(COD_post_1892$final_inf == "A37.900" | COD_post_1892$final_inf == "A37.901")))
+
+# Assign the counts
+COD_post_1892[Bronchiolitis_idx,]["Bronchiolitis"] <- 1
+COD_post_1892[Cancer_idx,]["Cancer"] <- 1
+COD_post_1892[Cardiovascular_idx,]["Cardiovascular"] <- 1
+COD_post_1892[Croup_idx,]["Croup"] <- 1
+COD_post_1892[Diarrhea_idx,]["Diarrhea"] <- 1
+COD_post_1892[Drowning_idx,]["Drowning"] <- 1
+COD_post_1892[Measles_idx,]["Measles"] <- 1
+COD_post_1892[Meningitis_idx,]["Meningitis"] <- 1
+COD_post_1892[Old_idx,]["Old"] <- 1
+COD_post_1892[Pneumonia_idx,]["Pneumonia"] <- 1
+COD_post_1892[Stroke_idx,]["Stroke"] <- 1
+COD_post_1892[Tuberculosis_idx,]["Tuberculosis"] <- 1
+COD_post_1892[Tyhpus_idx,]["Typhus"] <- 1
+COD_post_1892[Whooping_cough_idx,]["Whooping_cough"] <- 1
+
+# Age groups
+COD_post_1892$Age_1 <- 0
+COD_post_1892$Age_1_5 <- 0
+COD_post_1892$Age_5_15 <- 0
+COD_post_1892$Age_15_20 <- 0
+COD_post_1892$Age_20_50 <- 0
+COD_post_1892$Age_50_75 <- 0
+COD_post_1892$Age_75 <- 0
+
+COD_post_1892[which(COD_post_1892$LeeftijdJaar < 1),]["Age_1"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 1 & COD_post_1892$LeeftijdJaar < 5),]["Age_1_5"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 5 & COD_post_1892$LeeftijdJaar < 15),]["Age_5_15"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 15 & COD_post_1892$LeeftijdJaar < 20),]["Age_15_20"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 20 & COD_post_1892$LeeftijdJaar < 50),]["Age_20_50"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 50 & COD_post_1892$LeeftijdJaar < 75),]["Age_50_75"] <- 1
+COD_post_1892[which(COD_post_1892$LeeftijdJaar >= 75),]["Age_75"] <- 1
+
+# Make age group factor:
+COD_post_1892$Age_group <- NA
+COD_post_1892[COD_post_1892$Age_1 == 1,]["Age_group"] <- "< 1"
+COD_post_1892[COD_post_1892$Age_1_5 == 1,]["Age_group"] <- "1-5"
+COD_post_1892[COD_post_1892$Age_5_15 == 1,]["Age_group"] <- "5-15"
+COD_post_1892[COD_post_1892$Age_15_20 == 1,]["Age_group"] <- "15-20"
+COD_post_1892[COD_post_1892$Age_20_50 == 1,]["Age_group"] <- "20-50"
+COD_post_1892[COD_post_1892$Age_50_75 == 1,]["Age_group"] <- "50-75"
+COD_post_1892[COD_post_1892$Age_75 == 1,]["Age_group"] <- ">= 75"
+COD_post_1892$Age_group <- as.factor(COD_post_1892$Age_group)
+
+# Combine age groups and diseases
+COD_post_1892$Bronchiolitis_age <- 0
+COD_post_1892$Cancer_age <- 0
+COD_post_1892$Cardiovascular_age <- 0
+COD_post_1892$Croup_age <- 0
+COD_post_1892$Diarrhea_age <- 0
+COD_post_1892$Drowning_age <- 0
+COD_post_1892$Measles_age <- 0
+COD_post_1892$Meningitis_age <- 0
+COD_post_1892$Old_age <- 0
+COD_post_1892$Pneumonia_age <- 0
+COD_post_1892$Stroke_age <- 0
+COD_post_1892$Tuberculosis_age <- 0
+COD_post_1892$Typhus_age <- 0
+COD_post_1892$Whooping_cough_age <- 0
+COD_post_1892$acm_1 <- 0
+COD_post_1892$acm_1_5 <- 0
+COD_post_1892$acm_5_15 <- 0
+COD_post_1892$acm_15_20 <- 0
+COD_post_1892$acm_20_50 <- 0
+COD_post_1892$acm_50_75 <- 0
+COD_post_1892$acm_75 <- 0
+
+# Assigning values to combined age and disease
+COD_post_1892[which(COD_post_1892$Bronchiolitis == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5")),]["Bronchiolitis_age"] <- 1
+COD_post_1892[which(COD_post_1892$Cancer == 1 & (COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75")),]["Cancer_age"] <- 1
+COD_post_1892[which(COD_post_1892$Cardiovascular == 1 & (COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75")),]["Cardiovascular_age"] <- 1
+COD_post_1892[which(COD_post_1892$Croup == 1 & COD_post_1892$Age_group == "1-5"),]["Croup_age"] <- 1
+COD_post_1892[which(COD_post_1892$Diarrhea == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5")),]["Diarrhea_age"] <- 1
+COD_post_1892[which(COD_post_1892$Drowning == 1 & (COD_post_1892$Age_group == "5-15" | COD_post_1892$Age_group == "15-20" | COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75")),]["Drowning_age"] <- 1
+COD_post_1892[which(COD_post_1892$Measles == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5")),]["Measles_age"] <- 1
+COD_post_1892[which(COD_post_1892$Meningitis == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5")),]["Meningitis_age"] <- 1
+COD_post_1892[which(COD_post_1892$Old == 1 & (COD_post_1892$Age_group == "50-75" | COD_post_1892$Age_group == ">= 75")),]["Old_age"] <- 1
+COD_post_1892[which(COD_post_1892$Pneumonia == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5" |  COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75" | COD_post_1892$Age_group == ">= 75")),]["Pneumonia_age"] <- 1
+COD_post_1892[which(COD_post_1892$Stroke == 1 & (COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75" | COD_post_1892$Age_group == ">= 75")),]["Stroke_age"] <- 1
+COD_post_1892[which(COD_post_1892$Tuberculosis == 1 & (COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75")),]["Tuberculosis_age"] <- 1
+COD_post_1892[which(COD_post_1892$Typhus == 1 & (COD_post_1892$Age_group == "20-50" | COD_post_1892$Age_group == "50-75")),]["Typhus_age"] <- 1
+COD_post_1892[which(COD_post_1892$Whooping_cough == 1 & (COD_post_1892$Age_group == "< 1" | COD_post_1892$Age_group == "1-5")),]["Whooping_cough_age"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "< 1"),]["acm_1"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "1-5"),]["acm_1_5"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "5-15"),]["acm_5_15"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "15-20"),]["acm_15_20"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "20-50"),]["acm_20_50"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == "50-75"),]["acm_50_75"] <- 1
+COD_post_1892[which(COD_post_1892$Age_group == ">= 75"),]["acm_75"] <- 1
+
+# Man and women of the correct age who died to to specific causes of death:
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Bronchiolitis_age == 1), "Bronchiolitis_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Bronchiolitis_age == 1), "Bronchiolitis_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Cancer_age == 1), "Cancer_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Cancer_age == 1), "Cancer_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Cardiovascular_age == 1), "Cardiovascular_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Cardiovascular_age == 1), "Cardiovascular_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Croup_age == 1), "Croup_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Croup_age == 1), "Croup_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Diarrhea_age == 1), "Diarrhea_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Diarrhea_age == 1), "Diarrhea_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Drowning_age == 1), "Drowning_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Drowning_age == 1), "Drowning_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Measles_age == 1), "Measles_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Measles_age == 1), "Measles_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Meningitis_age == 1), "Meningitis_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Meningitis_age == 1), "Meningitis_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Old_age == 1), "Old_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Old_age == 1), "Old_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Pneumonia_age == 1), "Pneumonia_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Pneumonia_age == 1), "Pneumonia_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Stroke_age == 1), "Stroke_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Stroke_age == 1), "Stroke_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Tuberculosis_age == 1), "Tuberculosis_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Tuberculosis_age == 1), "Tuberculosis_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Typhus_age == 1), "Typhus_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Typhus_age == 1), "Typhus_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man" & COD_post_1892$Whooping_cough_age == 1), "Whooping_cough_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw" & COD_post_1892$Whooping_cough_age == 1), "Whooping_cough_woman"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "man"), "Acm_man"] <- 1 
+COD_post_1892[which(COD_post_1892$Geslacht == "vrouw"), "Acm_woman"] <- 1
+
+
+# Set year and month to non-missing for 1899
+COD_post_1892[grep("1899", COD_post_1892$Date),]["jaar"] <- 1899
+COD_post_1892[grep("1899-07", COD_post_1892$Date),]["maandnr"] <- 07
+COD_post_1892[grep("1899-08", COD_post_1892$Date),]["maandnr"] <- 08
+COD_post_1892[grep("1899-09", COD_post_1892$Date),]["maandnr"] <- 09
+# Days:
+COD_post_1892[which(is.na(COD_post_1892$dag)), ]["dag"] <- day(c(COD_post_1892[which(is.na(COD_post_1892$dag)), ]["Date"])$Date)
+
+# Set all but date to NA:
+COD_post_1892[min(which(COD_post_1892$Date == "1899-07-01")):max(which(COD_post_1892$Date == "1899-09-30")),][c(5:ncol(COD_post_1892))] <- NA
+
+# Aggregate data pre 1892 to monthly level
+COD_pre_1892$Date <- floor_date(COD_pre_1892$Date, "month")
+monthly_COD_pre_1892 <- COD_pre_1892 %>%
+  group_by(Date) %>%
+summarise_at(c(colnames(COD_pre_1892)[24:54], colnames(COD_pre_1892)[63:76]), sum)
+monthly_COD_pre_1892 <- as.data.frame(monthly_COD_pre_1892)
+
+monthly_COD_pre_1892$Month <- month(monthly_COD_pre_1892$Date)
+monthly_COD_pre_1892$Year <- year(monthly_COD_pre_1892$Date)
+
+# Aggregate data post 1892 to monthly level
+daily_COD_post_1892 <- COD_post_1892 %>%
+  group_by(Date) %>%
+summarise_at(c(colnames(COD_post_1892)[24:54], colnames(COD_post_1892)[63:76]), sum)
+daily_COD_post_1892 <- as.data.frame(daily_COD_post_1892)
+
+# Set to NA instead of 0
+daily_COD_post_1892[min(which(daily_COD_post_1892$Date == "1899-07-01")):max(which(daily_COD_post_1892$Date == "1899-09-30")),2:ncol(daily_COD_post_1892)] <- NA
+
+daily_COD_post_1892$Date <- floor_date(daily_COD_post_1892$Date, "month")
+monthly_COD_post_1892 <- daily_COD_post_1892 %>%
+  group_by(Date) %>%
+summarise_at(c(colnames(daily_COD_post_1892)[2:ncol(daily_COD_post_1892)]), sum)
+monthly_COD_post_1892 <- as.data.frame(monthly_COD_post_1892)
+
+monthly_COD_post_1892$Month <- month(monthly_COD_post_1892$Date)
+monthly_COD_post_1892$Year <- year(monthly_COD_post_1892$Date)
+
+combined_COD <- rbind(monthly_COD_pre_1892, monthly_COD_post_1892)
+combined_COD_no_1894 <- combined_COD[-(min(which(combined_COD$Date == "1894-07-01")):max(which(combined_COD$Date == "1894-12-01"))),] 
+
+final_combined <- combined_COD_no_1894
+July_idx <- which(final_combined$Month == 07 & final_combined$Year != 1899)
+August_idx <- which(final_combined$Month == 08 & final_combined$Year != 1899)
+September_idx <- which(final_combined$Month == 09 & final_combined$Year != 1899)
+
+colnames(final_combined)
+
+# Compute all except for cancer, cardiovascular, croup, drowning, stroke and typhus using mean imputation
+COD_mean <- colnames(final_combined)[c(2:4,11,12,15:22,25,26,29:33,37,39:42,44,46)]
+for(i in 1:27){
+  final_combined[final_combined$Date == "1899-07-01",COD_mean[i]] <- round(mean(unlist(final_combined[July_idx,COD_mean[i]])))
+  final_combined[final_combined$Date == "1899-08-01",COD_mean[i]] <- round(mean(unlist(final_combined[August_idx,COD_mean[i]])))
+  final_combined[final_combined$Date == "1899-09-01",COD_mean[i]] <- round(mean(unlist(final_combined[September_idx,COD_mean[i]])))
+}
+
+
+COD_linear <- colnames(final_combined)[-c(1,2:4,11,12,15:22,25,26,29:33,37,39:42,44,46:48)]
+for(i in 1:18){
+  final_combined[COD_linear[i]] <- round(na_interpolation(final_combined[COD_linear[i]]))
+}
+
+# Split the time series again
+monthly_COD_pre_1892 <- final_combined[final_combined$Year < 1892,]
+monthly_COD_post_1892 <- final_combined[final_combined$Year >= 1894,]
+
+# Add 1894 again
+monthly_COD_post_1892 <- rbind(combined_COD[(min(which(combined_COD$Date == "1894-07-01")):max(which(combined_COD$Date == "1894-12-01"))),], monthly_COD_post_1892)
+
+# Excess winter deaths for both pre and post 1892
+winter_deaths <- numeric(length(unique(monthly_COD_pre_1892$Year)))
+summer_deaths <- numeric(length(unique(monthly_COD_pre_1892$Year)))
+ewd <- numeric(length(unique(monthly_COD_pre_1892$Year)))
+for(i in 2:length(unique(monthly_COD_pre_1892$Year))){
+  winter_deaths[i] <- unlist(sum(monthly_COD_pre_1892[((monthly_COD_pre_1892$Month == 1 | monthly_COD_pre_1892$Month == 2 | monthly_COD_pre_1892$Month == 3) & monthly_COD_pre_1892$Year == unique(monthly_COD_pre_1892$Year)[i]),]["All_cause_mortality"]) + monthly_COD_pre_1892[(monthly_COD_pre_1892$Month == 12 & monthly_COD_pre_1892$Year == unique(monthly_COD_pre_1892$Year)[i-1]),]["All_cause_mortality"])
+  summer_deaths[i] <- unlist((0.5*(sum(monthly_COD_pre_1892[((monthly_COD_pre_1892$Month == 4 | monthly_COD_pre_1892$Month == 5 | monthly_COD_pre_1892$Month == 6  | monthly_COD_pre_1892$Month == 7) & monthly_COD_pre_1892$Year == unique(monthly_COD_pre_1892$Year)[i]),]["All_cause_mortality"]) + sum(monthly_COD_pre_1892[((monthly_COD_pre_1892$Month == 8 | monthly_COD_pre_1892$Month == 9 | monthly_COD_pre_1892$Month == 10 | monthly_COD_pre_1892$Month == 11) & monthly_COD_pre_1892$Year == unique(monthly_COD_pre_1892$Year)[i-1]),]["All_cause_mortality"]))))
+  ewd[i] <- winter_deaths[i] - summer_deaths[i]
+}  
+
+monthly_COD_pre_1892$EWD <- NA
+for(i in 2:length(ewd)){
+  monthly_COD_pre_1892[monthly_COD_pre_1892$Year == unique(monthly_COD_pre_1892$Year)[i],]["EWD"] <- ewd[i]
+}
+
+winter_deaths <- numeric(length(unique(monthly_COD_post_1892$Year)))
+summer_deaths <- numeric(length(unique(monthly_COD_post_1892$Year)))
+ewd <- numeric(length(unique(monthly_COD_post_1892$Year)))
+for(i in 2:length(unique(monthly_COD_post_1892$Year))){
+  winter_deaths[i] <- unlist(sum(monthly_COD_post_1892[((monthly_COD_post_1892$Month == 1 | monthly_COD_post_1892$Month == 2 | monthly_COD_post_1892$Month == 3) & monthly_COD_post_1892$Year == unique(monthly_COD_post_1892$Year)[i]),]["All_cause_mortality"]) + monthly_COD_post_1892[(monthly_COD_post_1892$Month == 12 & monthly_COD_post_1892$Year == unique(monthly_COD_post_1892$Year)[i-1]),]["All_cause_mortality"])
+  summer_deaths[i] <- unlist((0.5*(sum(monthly_COD_post_1892[((monthly_COD_post_1892$Month == 4 | monthly_COD_post_1892$Month == 5 | monthly_COD_post_1892$Month == 6  | monthly_COD_post_1892$Month == 7) & monthly_COD_post_1892$Year == unique(monthly_COD_post_1892$Year)[i]),]["All_cause_mortality"]) + sum(monthly_COD_post_1892[((monthly_COD_post_1892$Month == 8 | monthly_COD_post_1892$Month == 9 | monthly_COD_post_1892$Month == 10 | monthly_COD_post_1892$Month == 11) & monthly_COD_post_1892$Year == unique(monthly_COD_post_1892$Year)[i-1]),]["All_cause_mortality"]))))
+  ewd[i] <- winter_deaths[i] - summer_deaths[i]
+}  
+
+monthly_COD_post_1892$EWD <- NA
+for(i in 2:length(ewd)){
+  monthly_COD_post_1892[monthly_COD_post_1892$Year == unique(monthly_COD_post_1892$Year)[i],]["EWD"] <- ewd[i]
+}
+
+# Final data
+# Combining the two again
+NA_dates <- seq(as.Date("1892/01/01"), as.Date("1894/06/01"), 'months')
+NA_dates <- as.data.frame(NA_dates)
+NA_dates_df <- as.data.frame(matrix(NA, ncol = ncol(monthly_COD_post_1892)-1), nrow = length(NA_dates))
+NA_dates_df <- cbind(NA_dates, NA_dates_df)
+colnames(NA_dates_df) <- colnames(monthly_COD_post_1892)
+COD_complete <- rbind(monthly_COD_pre_1892, NA_dates_df, monthly_COD_post_1892)
+
+##########################################################################################################################
+######################################################## Weather data ########################################################
+##########################################################################################################################
+
+setwd("~/Documents/Master statistiek/Jaar 2/Scriptie/Code")
+weather_1 <- read.csv("hourly_weather_1.csv", sep = ";")
+weather_2 <- read.csv("hourly_weather_2.csv", sep = ";")
+weather_1 <- weather_1[which(weather_1$YYYY >= 1856),]
+weather_2 <- weather_2[which(weather_2$YYYY <= 1904),]
+weather_1["FF2"] <- NULL
+weather_2["FF2"] <- NULL
+weather_1["W2"] <- NULL
+weather_2["W2"] <- NULL
+
+# combining the two df's
+weather_full <- rbind(weather_1, weather_2)
+
+# Give full date column
+weather_full$DATE <- ISOdate(weather_full[,1], weather_full[,2], weather_full[,3], weather_full[,4])
+str_remove_all(weather_full$DATE, "[GMT]")
+
+# Changing the formatting
+weather_full$TA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TA)))
+weather_full$TB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$TB)))
+weather_full$PA <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PA)))
+weather_full$PB <- as.numeric(gsub(",", ".", gsub("\\.", "", weather_full$PA)))
+
+# Setting the -9999 values to NA
+weather_full[weather_full == -9999] <- NA
+
+# Largest complete series
+weather_full$DIR <- as.factor(weather_full$DIR)
+weather_full$FF1 <- as.factor(weather_full$FF1)
+weather_full$W1 <- as.factor(weather_full$W1)
+
+prior_agg <- weather_full
+# Daily mean
+TB_mean <- tapply(prior_agg$TB, as.Date(prior_agg$DATE), mean, na.rm = TRUE)
+TB_min <- tapply(prior_agg$TB, as.Date(prior_agg$DATE), min, na.rm = TRUE)
+TB_max <- tapply(prior_agg$TB, as.Date(prior_agg$DATE), max, na.rm = TRUE)
+PA_mean <- tapply(prior_agg$PA, as.Date(prior_agg$DATE), mean, na.rm = TRUE)
+PA_min <- tapply(prior_agg$PA, as.Date(prior_agg$DATE), min, na.rm = TRUE)
+PA_max <- tapply(prior_agg$PA, as.Date(prior_agg$DATE), max, na.rm = TRUE)
+# Maybe we should instead take the mean daily temperature first, and then compute the SD from that.
+TB_sd <- tapply(prior_agg$TB, as.Date(prior_agg$DATE), mean, na.rm = TRUE)
+PA_sd <- tapply(prior_agg$PA, as.Date(prior_agg$DATE), mean, na.rm = TRUE)
+
+daily_weather <- as.data.frame(cbind(TB_mean, TB_min, TB_max, PA_mean, PA_min, PA_max, TB_sd, PA_sd))
+daily_weather$Date <- rownames(daily_weather)
+daily_weather$Date <- as.Date(daily_weather$Date)
+
+ma_lag2_heat <- numeric(nrow(daily_weather))
+ma_lag26_cold <- numeric(nrow(daily_weather))
+for(i in 2:nrow(daily_weather)){
+  ma_lag2_heat[i] <- mean(c(daily_weather$TB_mean[i], daily_weather$TB_mean[i-1]), na.rm = T)
+}
+for(i in 26:nrow(daily_weather)){
+  ma_lag26_cold[i] <- mean(c(daily_weather$TB_mean[i], daily_weather$TB_mean[i-1], daily_weather$TB_mean[i-2], daily_weather$TB_mean[i-3], daily_weather$TB_mean[i-4], daily_weather$TB_mean[i-5], daily_weather$TB_mean[i-6], daily_weather$TB_mean[i-7], daily_weather$TB_mean[i-8], daily_weather$TB_mean[i-9], daily_weather$TB_mean[i-10], daily_weather$TB_mean[i-11], daily_weather$TB_mean[i-12], daily_weather$TB_mean[i-13], daily_weather$TB_mean[i-14], daily_weather$TB_mean[i-15], daily_weather$TB_mean[i-16], daily_weather$TB_mean[i-17], daily_weather$TB_mean[i-18], daily_weather$TB_mean[i-19], daily_weather$TB_mean[i-20], daily_weather$TB_mean[i-21], daily_weather$TB_mean[i-22], daily_weather$TB_mean[i-23], daily_weather$TB_mean[i-24], daily_weather$TB_mean[i-25]), na.rm = T)
+}
+
+quantile(weather_full$TB, c(0.02, 0.98), na.rm = T)
+
+ex_heat_days <- which(ma_lag2_heat > 23.333) # say value 205. This is the average between observation 205 and 204
+# Maybe make monthly counts of variable
+ext_cold_days <- which(ma_lag26_cold < -3.333)[-c(1:25)] # say value 26: This is the average between observation 26,25,..,1. so for 27 we have: 27,...,2
+daily_weather$Ex_cold <- 0
+daily_weather$Ex_heat <- 0
+daily_weather[ext_cold_days,"Ex_cold"] <- 1
+daily_weather[ex_heat_days, "Ex_heat"] <- 1
+
+# Set days as missing
+daily_weather[daily_weather$Date == "1861-07-18",c(1:3,7)] <- NA
+daily_weather[daily_weather$Date == "1876-11-20",c(1:3,7)] <- NA
+
+daily_weather[daily_weather$Date == "1856-02-06",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1856-02-15",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1861-07-18",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1868-05-22",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1868-05-27",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1876-11-20",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1878-06-01",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1878-06-13",c(4:6,8)] <- NA
+daily_weather[daily_weather$Date == "1883-11-09",c(4:6,8)] <- NA
+
+daily_weather[which(is.nan(daily_weather$TB_mean)),c(1,4,7,8)] <- NA
+daily_weather[which(daily_weather$TB_min == Inf),c(2,5)] <- NA
+daily_weather[which(daily_weather$TB_max == -Inf),c(3,6)] <- NA
+
+
+# Monthly data obtained from daily data
+date <- as.Date(daily_weather$Date, format = "%Y-%m-%d")
+months <- format(date, "%Y-%m")
+daily_weather$months <- months
+TB_month_mean <- tapply(daily_weather$TB_mean, daily_weather$months, mean, na.rm = TRUE)
+TB_month_min <- tapply(daily_weather$TB_min, daily_weather$months, min, na.rm = TRUE)
+TB_month_max <- tapply(daily_weather$TB_max, daily_weather$months, max, na.rm = TRUE)
+PA_month_mean <- tapply(daily_weather$PA_mean, daily_weather$months, mean, na.rm = TRUE)
+PA_month_min <- tapply(daily_weather$PA_min, daily_weather$months, min, na.rm = TRUE)
+PA_month_max <- tapply(daily_weather$PA_max, daily_weather$months, max, na.rm = TRUE)
+TB_month_sd <- tapply(daily_weather$TB_sd, daily_weather$months, sd, na.rm = TRUE)
+PA_month_sd <- tapply(daily_weather$PA_sd, daily_weather$months, sd, na.rm = TRUE)
+Cold_days <- tapply(daily_weather$Ex_cold, daily_weather$months, sum, na.rm = TRUE)
+Heat_days <- tapply(daily_weather$Ex_heat, daily_weather$months, sum, na.rm = TRUE)
+
+monthly_weather <- as.data.frame(cbind(TB_month_mean, TB_month_min, TB_month_max, PA_month_mean, PA_month_min, PA_month_max, TB_month_sd, PA_month_sd, Cold_days, Heat_days))
+monthly_weather$Date <- rownames(monthly_weather)
+monthly_weather$Date <- paste(monthly_weather$Date, 01, sep = "-", collapse = NULL)
+monthly_weather$Date <- as.Date(monthly_weather$Date, format = "%Y-%m-%d")
+rownames(monthly_weather) <- 1:nrow(monthly_weather)
+
+# Induce missingness in months
+# Observe that June 1861 and July 1861 have more than 2 missing days. Therefore, these are set to missing
+monthly_weather[monthly_weather$Date == "1861-06-01",1:8] <- NA
+monthly_weather[monthly_weather$Date == "1861-07-01",1:8] <- NA
+
+# aggregating DIR
+DIR_tab <- prior_agg %>% 
+      group_by(Date = paste( year(DATE), month(DATE), day(DATE)))
+DIR_tab <- DIR_tab %>% count(DIR, Date)
+# now we want to spread the DIR categories such that each category has a different column with the corresponding count per day
+# Also induce missingness: 1h or more per day missing is missing day and > 2 missing days is missing month
+DIR_tab <- spread(DIR_tab, DIR, n)
+DIR_tab$Date <- as.Date(DIR_tab$Date, "%Y%m%d")
+DIR_tab$months <- format(DIR_tab$Date, "%Y-%m")
+# Set to NA before aggregation
+DIR_tab[DIR_tab$Date == "1863-06-25",][c("noord", "noordoost", "noordwest", "oost", "west", "zuid", "zuidoost", "zuidwest")] <- NA
+DIR_tab[DIR_tab$Date == "1876-11-20",][c("noord", "noordoost", "noordwest", "oost", "west", "zuid", "zuidoost", "zuidwest")] <- NA
+dir_monthly <- as.data.frame(cbind(
+  tapply(DIR_tab$noord, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$noordoost, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$noordwest, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$oost, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$west, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$zuid, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$zuidoost, DIR_tab$months, mean, na.rm = TRUE),
+  tapply(DIR_tab$zuidwest, DIR_tab$months, mean, na.rm = TRUE)))
+colnames(dir_monthly) <- levels(prior_agg$DIR)
+dir_monthly$Date <- rownames(dir_monthly)
+dir_monthly$Date <- paste(dir_monthly$Date, 01, sep = "-", collapse = NULL)
+dir_monthly$Date <- as.Date(dir_monthly$Date, format = "%Y-%m-%d")
+rownames(dir_monthly) <- 1:nrow(dir_monthly)
+# Set NaN to 0
+dir_monthly[which(is.nan(dir_monthly$noord)),]["noord"] <- 0
+dir_monthly[which(is.nan(dir_monthly$noordoost)),]["noordoost"] <- 0
+dir_monthly[which(is.nan(dir_monthly$noordwest)),]["noordwest"] <- 0
+dir_monthly[which(is.nan(dir_monthly$oost)),]["oost"] <- 0
+dir_monthly[which(is.nan(dir_monthly$west)),]["west"] <- 0
+dir_monthly[which(is.nan(dir_monthly$zuid)),]["zuid"] <- 0
+dir_monthly[which(is.nan(dir_monthly$zuidoost)),]["zuidoost"] <- 0
+dir_monthly[which(is.nan(dir_monthly$zuidwest)),]["zuidwest"] <- 0
+# There are months that should be set to missing
+
+# Aggregating FF1 
+FF1_tab <- prior_agg %>% 
+      group_by(Date = paste( year(DATE), month(DATE), day(DATE)))
+FF1_tab <- FF1_tab %>% count(FF1, Date)
+FF1_tab <- spread(FF1_tab, FF1, n)
+FF1_tab$Date <- as.Date(FF1_tab$Date, "%Y%m%d")
+FF1_tab$months <- format(FF1_tab$Date, "%Y-%m")
+# Set to NA before aggregation
+FF1_tab[FF1_tab$Date == "1862-07-14",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1862-09-16",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1863-08-12",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1863-08-15",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1863-08-18",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1864-06-07",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1876-11-20",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1881-12-31",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1882-01-01",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1882-05-29",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1882-05-30",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+FF1_tab[FF1_tab$Date == "1888-07-18",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+ff1_monthly <- as.data.frame(cbind(
+  tapply(FF1_tab$`bekwame koelte`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$`bijna stil`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$gladde, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$hard, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$`harde storm`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$matig, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$`matige koelte`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$rukwind, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$`slappe koelte`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$`stijve koelte`, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$stil, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$storm, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$wakker, FF1_tab$months, mean, na.rm = TRUE),
+  tapply(FF1_tab$zacht, FF1_tab$months, mean, na.rm = TRUE)))
+colnames(ff1_monthly) <- levels(prior_agg$FF1)
+ff1_monthly$Date <- rownames(ff1_monthly)
+ff1_monthly$Date <- paste(ff1_monthly$Date, 01, sep = "-", collapse = NULL)
+ff1_monthly$Date <- as.Date(ff1_monthly$Date, format = "%Y-%m-%d")
+rownames(ff1_monthly) <- 1:nrow(ff1_monthly)
+# Set NaN to 0
+ff1_monthly[which(is.nan(ff1_monthly$"bekwame koelte")),]["bekwame koelte"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"bijna stil")),]["bijna stil"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"gladde")),]["gladde"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"hard")),]["hard"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"harde storm")),]["harde storm"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"matig")),]["matig"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"matige koelte")),]["matige koelte"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"rukwind")),]["rukwind"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"slappe koelte")),]["slappe koelte"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"stijve koelte")),]["stijve koelte"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"stil")),]["stil"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"storm")),]["storm"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"wakker")),]["wakker"] <- 0
+ff1_monthly[which(is.nan(ff1_monthly$"zacht")),]["zacht"] <- 0
+# Set months to missing
+ff1_monthly[ff1_monthly$Date == "1863-08-01",][c("bekwame koelte", "bijna stil", "gladde", "hard", "harde storm", "matig", "matige koelte", "rukwind", "slappe koelte", "stijve koelte", "stil", "storm", "wakker", "zacht")] <- NA
+
+
+# W1 aggregation
+# Either transform categories to percipitation (potentially dropping categories without rain and setting those values to dry as there is no rain)
+# Hail, snow are also counted as rain (precipitation)
+prior_agg[which(prior_agg$W1 == "dampig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "dampig en droog"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "dampig en stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "dikke mist"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en damp"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en dampig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en dampig en stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en dampigg"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en donder"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en mist"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en mistd"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en mistig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en mistig en stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en weerlicht"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog en onweer"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog na damp"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog na donder"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog na natte mist"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "droog na stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "gladde"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "hard"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "matige stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mist en droog"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mist en stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mist en zacht"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mistig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mistig en droog"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "mistig en stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "noord"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "noordoost"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen en dampig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen en dampig en droog"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen en mist"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen en mistig"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "stofregen en weerlicht"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "wakker"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "weerlicht"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "weerlicht en drooog"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "west"),]["W1"] <- levels(prior_agg$W1)[15]
+prior_agg[which(prior_agg$W1 == "zacht"),]["W1"] <- levels(prior_agg$W1)[15]
+
+# Dropping categories without counts
+prior_agg$W1 <- droplevels(prior_agg$W1)
+
+# This gives the average daily dry hours per month
+W1_tab <- prior_agg %>% 
+      group_by(Date = paste( year(DATE), month(DATE), day(DATE)))
+W1_tab <- W1_tab %>% count(W1, Date)
+W1_tab <- spread(W1_tab, W1, n)
+W1_tab$Date <- as.Date(W1_tab$Date, "%Y%m%d")
+W1_tab$months <- format(W1_tab$Date, "%Y-%m")
+# Set to NA before aggregation
+W1_tab[W1_tab$Date == "1862-12-20",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1874-04-16",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1876-11-20",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1877-02-13",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1878-07-28",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1880-11-01",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1883-11-09",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1884-04-13",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1884-08-30",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1884-12-06",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1887-04-30",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1888-07-26",][c(colnames(W1_tab)[2:95])] <- NA
+W1_tab[W1_tab$Date == "1888-08-22",][c(colnames(W1_tab)[2:95])] <- NA
+w1_monthly <- as.data.frame(cbind(
+  tapply(W1_tab$`droog`, W1_tab$months, mean, na.rm = TRUE)))
+colnames(w1_monthly) <- c("Mean dry hours per day")
+w1_monthly$Date <- rownames(w1_monthly)
+w1_monthly$Date <- paste(w1_monthly$Date, 01, sep = "-", collapse = NULL)
+w1_monthly$Date <- as.Date(w1_monthly$Date, format = "%Y-%m-%d")
+rownames(w1_monthly) <- 1:nrow(w1_monthly)
+# There are no NaN's or months that should be set to missing
+
+weather_aggregated_prior <- cbind(monthly_weather, dir_monthly, ff1_monthly, w1_monthly)
+# Impute missing values
+
+# Linear interpolation for TB
+weather_aggregated_prior$TB_month_mean <- na_interpolation(weather_aggregated_prior$TB_month_mean, option = "linear")
+weather_aggregated_prior$TB_month_min <- na_interpolation(weather_aggregated_prior$TB_month_min, option = "linear")
+weather_aggregated_prior$TB_month_max <- na_interpolation(weather_aggregated_prior$TB_month_max, option = "linear")
+weather_aggregated_prior$TB_month_sd <- na_interpolation(weather_aggregated_prior$TB_month_sd, option = "linear")
+
+# Mean imputation for PA
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$PA_month_mean)),]["PA_month_mean"] <- mean(weather_aggregated_prior$PA_month_mean, na.rm = TRUE)
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$PA_month_min)),]["PA_month_min"] <- mean(weather_aggregated_prior$PA_month_min, na.rm = TRUE)
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$PA_month_max)),]["PA_month_max"] <- mean(weather_aggregated_prior$PA_month_max, na.rm = TRUE)
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$PA_month_sd)),]["PA_month_sd"] <- mean(weather_aggregated_prior$PA_month_sd, na.rm = TRUE)
+
+
+# Mode imputation for other missing variables (to stay consistent with impute then aggregate). We only have to impute a missing month for FF1
+ff1_mode <- function(variable) {
+   uniqv <- unique(variable)
+   uniqv[which.max(tabulate(match(variable, uniqv)))]
+}
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"bekwame koelte")),]["bekwame koelte"] <- ff1_mode(weather_aggregated_prior$"bekwame koelte")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"bijna stil")),]["bijna stil"] <- ff1_mode(weather_aggregated_prior$"bijna stil")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"gladde")),]["gladde"] <- ff1_mode(weather_aggregated_prior$"gladde")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"hard")),]["hard"] <- ff1_mode(weather_aggregated_prior$"hard")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"harde storm")),]["harde storm"] <- ff1_mode(weather_aggregated_prior$"harde storm")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"matig")),]["matig"] <- ff1_mode(weather_aggregated_prior$"matig")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"matige koelte")),]["matige koelte"] <- ff1_mode(weather_aggregated_prior$"matige koelte")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"rukwind")),]["rukwind"] <- ff1_mode(weather_aggregated_prior$"rukwind")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"slappe koelte")),]["slappe koelte"] <- ff1_mode(weather_aggregated_prior$"slappe koelte")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"stijve koelte")),]["stijve koelte"] <- ff1_mode(weather_aggregated_prior$"stijve koelte")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"stil")),]["stil"] <- ff1_mode(weather_aggregated_prior$"stil")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"storm")),]["storm"] <- ff1_mode(weather_aggregated_prior$"storm")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"wakker")),]["wakker"] <- ff1_mode(weather_aggregated_prior$"wakker")
+weather_aggregated_prior[which(is.na(weather_aggregated_prior$"zacht")),]["zacht"] <- ff1_mode(weather_aggregated_prior$"zacht")
+
+# Remove last row as it is for 1905
+weather_aggregated_prior <- weather_aggregated_prior[-c(nrow(weather_aggregated_prior)),]
+
+# Set duplicate dates to NULL
+weather_aggregated_prior[,c(20,35,37)] <- NULL
+
+##########################################################################################################################
+######################################################## Population interpolation ########################################
+##########################################################################################################################
+
+men <- read_xlsx("men_census_pop.xlsx") 
+women <- read_xlsx("women_census_pop.xlsx")
+jaarboek <- read_xlsx("jaarboek.xlsx") 
+jaarboek <- as.data.frame(jaarboek)
+jaarboek[,2:3] <- NULL
+men <- as.data.frame(men)
+women <- as.data.frame(women)
+human <- as.data.frame(matrix(NA, nrow = nrow(men), 1))
+human$age <- men[,1] 
+human$V1 <-NULL
+human$y_1849 <- men[,2] + women[,2]
+human$y_1859 <- men[,3] + women[,3]
+human$y_1869 <- men[,4] + women[,4]
+human$y_1879 <- men[,5] + women[,5]
+human$y_1889 <- men[,6] + women[,6]
+human$y_1899 <- men[,7] + women[,7]
+human$y_1909 <- men[,8] + women[,8]
+human$y_1820 <- men[,9] + women[,9]
+human$y_1830 <- men[,10] + women[,10]
+
+# Setting aside age, as it cannot work with that
+ages <- human$age
+
+# Dates for interpolation
+dates_out <- c(seq(as.Date("1856/01/01"), as.Date("1904/12/01"), 'months'))
+# Dates from census
+dates_in <- c("1849-11-19", "1859-12-13", "1869-12-01", "1879-12-31", "1889-12-31", "1899-12-31", "1909-12-31", "1920-12-31", "1930-12-31")
+
+human <- human[,2:ncol(human)]
+
+# Exponential interpolation
+human_exp <- interp(human , dates_in , dates_out , "exponential", rule = 2)
+human_exp <- round(human_exp , 0)
+human_exp <- cbind(ages, human_exp)
+human_exp <- as.data.frame(human_exp)
+colnames(human_exp)[1] <- "age"
+colnames(human_exp)[2:ncol(human_exp)] <- as.character(dates_out)
+
+
+####################################################################################################################################
+############################################### Merging the data frames ############################################################
+####################################################################################################################################
+post_1892_COD <- as.data.frame(seq(as.Date("1892/01/01"), as.Date("1894/06/01"), 'months'))
+post_1892_COD <- cbind(post_1892_COD, as.data.frame(matrix(NA, nrow = length(post_1892_COD), ncol = ncol(COD_complete)-1)))
+colnames(post_1892_COD) <- colnames(COD_complete)
+post_1892_COD <- rbind(post_1892_COD, COD_complete[which(COD_complete$Year >= 1892),])
+
+pre_1892_dat <- cbind(COD_complete[which(COD_complete$Year < 1892),], weather_aggregated_prior[which(year(weather_aggregated_prior$Date) < 1892),])
+post_1892_dat <- cbind(post_1892_COD, weather_aggregated_prior[which(year(weather_aggregated_prior$Date) >= 1892),])
+
+# Remove duplicate "Date" column
+pre_1892_dat[,60] <- NULL
+post_1892_dat[,60] <- NULL
+combined_dat <- rbind(pre_1892_dat, post_1892_dat)
+
+# Preparing age groups as factor
+population_df <- gather(human_exp, Date, Population, "1856-01-01":"1904-12-01", factor_key=TRUE)
+pop_1 <- population_df[which(population_df$age < 1),"Population"]
+pop_1_5 <- tapply(population_df[which(population_df$age >= 1 & population_df$age < 5),"Population"], population_df[which(population_df$age >= 1 & population_df$age < 5),"Date"], sum)
+pop_5_15 <- tapply(population_df[which(population_df$age >= 5 & population_df$age < 15),"Population"], population_df[which(population_df$age >= 5 & population_df$age < 15),"Date"], sum)
+pop_15_20 <- tapply(population_df[which(population_df$age >= 15 & population_df$age < 20),"Population"], population_df[which(population_df$age >= 15 & population_df$age < 20),"Date"], sum)
+pop_20_50 <- tapply(population_df[which(population_df$age >= 20 & population_df$age < 50),"Population"], population_df[which(population_df$age >= 20 & population_df$age < 50),"Date"], sum)
+pop_50_75 <- tapply(population_df[which(population_df$age >= 50 & population_df$age < 75),"Population"], population_df[which(population_df$age >= 50 & population_df$age < 75),"Date"], sum)
+pop_75 <- tapply(population_df[which(population_df$age >= 75),"Population"], population_df[which(population_df$age >= 75),"Date"], sum)
+
+combined_dat <- cbind(combined_dat, pop_1, pop_1_5, pop_5_15, pop_15_20, pop_20_50, pop_50_75, pop_75, pop_tot = c(pop_1 + pop_1_5 + pop_5_15 + pop_15_20 + pop_20_50 + pop_50_75 + pop_75))
+
+# Separate the data again:
+pre_1892_data <- combined_dat[which(combined_dat$Date == "1856-01-01"):which(combined_dat$Date == "1891-12-01"),]
+post_1892_data <- combined_dat[which(combined_dat$Date == "1894-07-01"):which(combined_dat$Date == "1904-12-01"),]
+
+# Setting color palette
+mycolors = c(brewer.pal(name="Set1", n = 9), brewer.pal(name="Set2", n = 5), brewer.pal(name="Pastel1", n = 7))
+
+# Weather time series
+tb_mean_ts <- ts(data = weather_aggregated_prior$TB_month_mean, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+tb_min_ts <- ts(data = weather_aggregated_prior$TB_month_min, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+tb_max_ts <- ts(data = weather_aggregated_prior$TB_month_max, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+tb_sd_ts <- ts(data = weather_aggregated_prior$TB_month_sd, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+pa_mean_ts <- ts(data = weather_aggregated_prior$PA_month_mean, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+pa_min_ts <- ts(data = weather_aggregated_prior$PA_month_min, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+pa_max_ts <- ts(data = weather_aggregated_prior$PA_month_max, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+pa_sd_ts <- ts(data = weather_aggregated_prior$PA_month_sd, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+dry_ts <- ts(data = weather_aggregated_prior$`Mean dry hours per day`, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+
+# Death time series
+bronchiolitis_ts <- ts(data = combined_dat$Bronchiolitis_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+cancer_ts <- ts(data = combined_dat$Cancer_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+cardiovascular_ts <- ts(data = combined_dat$Cardiovascular_age, end = c(1904, 12),  frequency = 12)
+croup_ts <- ts(data = combined_dat$Croup_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+diarrhea_ts <- ts(data = combined_dat$Diarrhea_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+drowning_ts <- ts(data = combined_dat$Drowning_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+measles_ts <- ts(data = combined_dat$Measles_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+meningitis_ts <- ts(data = combined_dat$Meningitis_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+old_ts <- ts(data = combined_dat$Old_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+pneumonia_ts <- ts(data = combined_dat$Pneumonia_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+stroke_ts <- ts(data = combined_dat$Stroke_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+tuberculosis_ts <- ts(data = combined_dat$Tuberculosis_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+typhus_ts <- ts(data = combined_dat$Typhus_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+whooping_cough_ts <- ts(data = combined_dat$Whooping_cough_age, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+all_cause_mortality_ts <- ts(data = combined_dat$All_cause_mortality, start = c(1856, 1), end = c(1904, 12),  frequency = 12)
+
+bronchiolitis_ts_pre <- ts(data = pre_1892_dat$Bronchiolitis_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+bronchiolitis_ts_post <- ts(data = post_1892_COD$Bronchiolitis_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+cancer_ts_pre <- ts(data = pre_1892_dat$Cancer_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+cancer_ts_post <- ts(data = post_1892_COD$Cancer_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+cardiovascular_ts_pre <- ts(data = pre_1892_dat$Cardiovascular_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+cardiovascular_ts_post <- ts(data = post_1892_COD$Cardiovascular_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+croup_ts_pre <- ts(data = pre_1892_dat$Croup_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+croup_ts_post <- ts(data = post_1892_COD$Croup_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+diarrhea_ts_pre <- ts(data = pre_1892_dat$Diarrhea_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+diarrhea_ts_post <- ts(data = post_1892_COD$Diarrhea_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+drowning_ts_pre <- ts(data = pre_1892_dat$Drowning_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+drowning_ts_post <- ts(data = post_1892_COD$Drowning_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+measles_ts_pre <- ts(data = pre_1892_dat$Measles_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+measles_ts_post <- ts(data = post_1892_COD$Measles_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+meningitis_ts_pre <- ts(data = pre_1892_dat$Meningitis_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+meningitis_ts_post <- ts(data = post_1892_COD$Meningitis_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+old_ts_pre <- ts(data = pre_1892_dat$Old_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+old_ts_post <- ts(data = post_1892_COD$Old_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+pneumonia_ts_pre <- ts(data = pre_1892_dat$Pneumonia_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+pneumonia_ts_post <- ts(data = post_1892_COD$Pneumonia_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+stroke_ts_pre <- ts(data = pre_1892_dat$Stroke_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+stroke_ts_post <- ts(data = post_1892_COD$Stroke_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+tuberculosis_ts_pre <- ts(data = pre_1892_dat$Tuberculosis_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+tuberculosis_ts_post <- ts(data = post_1892_COD$Tuberculosis_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+typhus_ts_pre <- ts(data = pre_1892_dat$Typhus_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+typhus_ts_post <- ts(data = post_1892_COD$Typhus_age, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+whooping_cough_ts_pre <- ts(data = pre_1892_dat$Whooping_cough_age, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+whooping_cough_ts_post <- ts(as.data.frame(post_1892_COD$Whooping_cough_age), start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+all_cause_mortality_ts_pre <- ts(data = pre_1892_dat$All_cause_mortality, start = c(1856, 1), end = c(1891, 12),  frequency = 12)
+all_cause_mortality_ts_post <- ts(data = post_1892_COD$All_cause_mortality, start = c(1894, 7), end = c(1904, 12),  frequency = 12)
+
+# Months with January as reference
+pre_1892_data$February <- 0
+pre_1892_data$March <- 0
+pre_1892_data$April <- 0
+pre_1892_data$May <- 0
+pre_1892_data$June <- 0
+pre_1892_data$July <- 0
+pre_1892_data$August <- 0
+pre_1892_data$September <- 0
+pre_1892_data$October <- 0
+pre_1892_data$November <- 0
+pre_1892_data$December <- 0
+
+pre_1892_data[which(pre_1892_data$Month == 2),"February"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 3),"March"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 4),"April"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 5),"May"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 6),"June"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 7),"July"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 8),"August"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 9),"September"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 10),"October"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 11),"November"] <- 1
+pre_1892_data[which(pre_1892_data$Month == 12),"December"] <- 1
+
+post_1892_data$February <- 0
+post_1892_data$March <- 0
+post_1892_data$April <- 0
+post_1892_data$May <- 0
+post_1892_data$June <- 0
+post_1892_data$July <- 0
+post_1892_data$August <- 0
+post_1892_data$September <- 0
+post_1892_data$October <- 0
+post_1892_data$November <- 0
+post_1892_data$December <- 0
+
+post_1892_data[which(post_1892_data$Month == 2),"February"] <- 1
+post_1892_data[which(post_1892_data$Month == 3),"March"] <- 1
+post_1892_data[which(post_1892_data$Month == 4),"April"] <- 1
+post_1892_data[which(post_1892_data$Month == 5),"May"] <- 1
+post_1892_data[which(post_1892_data$Month == 6),"June"] <- 1
+post_1892_data[which(post_1892_data$Month == 7),"July"] <- 1
+post_1892_data[which(post_1892_data$Month == 8),"August"] <- 1
+post_1892_data[which(post_1892_data$Month == 9),"September"] <- 1
+post_1892_data[which(post_1892_data$Month == 10),"October"] <- 1
+post_1892_data[which(post_1892_data$Month == 11),"November"] <- 1
+post_1892_data[which(post_1892_data$Month == 12),"December"] <- 1
+
+# COD populations
+pre_1892_data$Bronchiolitis_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+pre_1892_data$Cancer_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+pre_1892_data$Cardiovascular_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+pre_1892_data$Croup_population <- pre_1892_data$pop_1_5
+pre_1892_data$Diarrhea_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+pre_1892_data$Drowning_population <- pre_1892_data$pop_1_5 + pre_1892_data$pop_15_20 + pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+pre_1892_data$Measles_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+pre_1892_data$Meningitis_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+pre_1892_data$Old_population <- pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+pre_1892_data$Pneumonia_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5 + pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+pre_1892_data$Stroke_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+pre_1892_data$Tuberculosis_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+pre_1892_data$Typhus_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+pre_1892_data$Whooping_cough_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+
+post_1892_data$Bronchiolitis_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5
+post_1892_data$Cancer_population <- post_1892_data$pop_20_50 + post_1892_data$pop_50_75
+post_1892_data$Cardiovascular_population <- post_1892_data$pop_20_50 + post_1892_data$pop_50_75
+post_1892_data$Croup_population <- post_1892_data$pop_1_5
+post_1892_data$Diarrhea_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5
+post_1892_data$Drowning_population <- post_1892_data$pop_1_5 + post_1892_data$pop_15_20 + post_1892_data$pop_20_50 + post_1892_data$pop_50_75
+post_1892_data$Measles_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5
+post_1892_data$Meningitis_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5
+post_1892_data$Old_population <- post_1892_data$pop_50_75 + post_1892_data$pop_75
+post_1892_data$Pneumonia_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5 + post_1892_data$pop_20_50 + post_1892_data$pop_50_75 + post_1892_data$pop_75
+post_1892_data$Stroke_population <- post_1892_data$pop_20_50 + post_1892_data$pop_50_75 + post_1892_data$pop_75
+post_1892_data$Tuberculosis_population <- post_1892_data$pop_20_50 + post_1892_data$pop_50_75
+post_1892_data$Typhus_population <- post_1892_data$pop_20_50 + post_1892_data$pop_50_75
+post_1892_data$Whooping_cough_population <- post_1892_data$pop_1 + post_1892_data$pop_1_5
+
+rownames(combined_dat) <- 1:nrow(combined_dat)
+```
+
+Writing data
+```{r}
+setwd("Users/sjoerdhermes/Documents/Master statistiek/Jaar 2/Scriptie/Code/Github")
+write_csv(pre_1892_data, file = "pre_1892_data.csv")
+write_csv(post_1892_data, file = "post_1892_data.csv")
+write_csv(combined_dat, file = "combined_dat.csv")
+```

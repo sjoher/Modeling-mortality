@@ -1,0 +1,2060 @@
+---
+title: "Models, prediction and results"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Packages
+```{r}
+library("stringr")           
+library("tidyverse")
+library("mtsdi")
+library("imputeTS")
+library("ggpubr")
+library("MASS")
+library("finalfit")
+#library("TSdist")
+library("trend")
+library("tseries")
+library("lubridate") 
+library("mice")
+library("forecast")
+library("tseries")
+library("seastests")
+library("tscount")
+library("readxl")
+library("writexl")
+library("DemoTools")
+library("RColorBrewer")
+library("tscount")
+library("glarma")
+library("mgcv")
+library("stlplus")
+library("qqplotr")
+library("latex2exp")
+library("seastests")
+library("forestplot")
+```
+
+Scoring functions
+```{r}
+scoring.default <- function(response, pred, distr=c("poisson", "nbinom"), distrcoefs, individual=FALSE, cutoff=1000, ...){
+  n <- length(pred) 
+  logarithmic <- quadratic <- spherical <- rankprob <- dawseb <- normsq <- sqerror <- numeric(n) #scores
+  for(t in 1:n){
+    #auxiliary objects, which are overwritten in each step:
+      y <- response[t]
+      mu <- pred[t]
+      sigma <- sddistr(meanvalue=mu, distr=distr, distrcoefs=distrcoefs)
+      p_y <- ddistr(y, meanvalue=mu, distr=distr, distrcoefs=distrcoefs)
+      quadrat_p <- sum(ddistr(0:cutoff, meanvalue=mu, distr=distr, distrcoefs=distrcoefs)^2)
+    #computation of the scores:
+      logarithmic[t] <- - log(p_y)
+      quadratic[t] <- - 2*p_y + quadrat_p
+      spherical[t] <- - p_y/sqrt(quadrat_p)
+      rankprob[t] <- sum((pdistr(0:cutoff, meanvalue=mu, distr=distr, distrcoefs=distrcoefs) - as.integer(y <= 0:cutoff))^2)
+      sqerror[t] <- (y-mu)^2
+      normsq[t] <- sqerror[t]/sigma^2 
+      dawseb[t] <- normsq[t] + 2*log(sigma)
+  }
+  result <- data.frame(
+    logarithmic=logarithmic,
+    quadratic=quadratic,
+    spherical=spherical,
+    rankprob=rankprob,
+    dawseb=dawseb,
+    normsq=normsq,
+    sqerror=sqerror
+  )
+  if(!individual) result <- apply(result, 2, mean)
+  return(result)
+}
+```
+
+All-cause mortality
+```{r}
+# Poisson GLM
+glm_fourier_1_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(All_cause_mortality ~ log(pop_tot) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(All_cause_mortality ~ log(pop_tot) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(All_cause_mortality ~ log(pop_tot) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(All_cause_mortality ~ log(pop_tot) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+
+glm_aic_pois <- glm(formula = All_cause_mortality ~ log(pop_tot) + February + 
+    March + April + May + June + July + August + September + 
+    October + November + December + lin_trend + TB_month_mean + 
+    TB_month_min + TB_month_max + PA_month_min + PA_month_max + 
+    PA_month_sd + Cold_days + Heat_days + noordoost + noordwest + 
+    west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + 
+    gladde + matig + `matige koelte` + `slappe koelte` + stil + 
+    `Mean dry hours per day`, family = poisson(link = "log"), 
+    data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = All_cause_mortality ~ log(pop_tot) + February + 
+    April + May + June + July + August + September + October + 
+    November + December + lin_trend + TB_month_mean + TB_month_max + 
+    PA_month_min + PA_month_sd + Cold_days + Heat_days + zuidoost + 
+    `bekwame koelte` + `matige koelte` + `slappe koelte` + `Mean dry hours per day`, 
+    data = pre_1892_data, init.theta = 61.9924161, link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(1,2,3,4,19,20) AR(1,2)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,2,3,4,19,20) AR(1)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$All_cause_mortality
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$pop_tot),
+           February = pre_1892_data$February, March = pre_1892_data$March, 
+           April = pre_1892_data$April, May = pre_1892_data$May, 
+           June = pre_1892_data$June, July = pre_1892_data$July, 
+           August = pre_1892_data$August, September = pre_1892_data$September, 
+           October = pre_1892_data$October, November = pre_1892_data$November,
+           December = pre_1892_data$December, Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Min temperature` = pre_1892_data$TB_month_min, 
+           `Max temperature` = pre_1892_data$TB_month_max, 
+           `Mean pressure` = pre_1892_data$PA_month_mean,
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           `Cold days` = pre_1892_data$Cold_days,
+           `Heat days` = pre_1892_data$Heat_days,
+           Noordoost = pre_1892_data$noordoost, Noordwest = pre_1892_data$noordwest,
+           West = pre_1892_data$west, Zuid = pre_1892_data$zuid,
+           Zuidsoost = pre_1892_data$zuidoost, Zuidwest = pre_1892_data$zuidwest, 
+           `Bekwame koelte` = pre_1892_data$`bekwame koelte`, 
+           `Bijna stil` = pre_1892_data$`bijna stil`, Gladde = pre_1892_data$gladde,
+            Matig = pre_1892_data$matig, `Matige koelte` = pre_1892_data$`matige koelte`, 
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, Stil = pre_1892_data$stil, 
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$pop_tot),
+           February = pre_1892_data$February, 
+           April = pre_1892_data$April, May = pre_1892_data$May, 
+           June = pre_1892_data$June, July = pre_1892_data$July, 
+           August = pre_1892_data$August, September = pre_1892_data$September, 
+           October = pre_1892_data$October, November = pre_1892_data$November,
+           December = pre_1892_data$December, Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Max temperature` = pre_1892_data$TB_month_max, 
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           `Cold days` = pre_1892_data$Cold_days,
+           `Heat days` = pre_1892_data$Heat_days,
+           Zuidsoost = pre_1892_data$zuidoost, 
+           `Matige koelte` = pre_1892_data$`matige koelte`, 
+           `Slappe koelte` = pre_1892_data$`slappe koelte`,
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 2, thetaLags = 4, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 2, thetaLags = 4, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 4, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 4, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = "darkslateblue", main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = "darkslateblue", main = "PIT all cause mortality NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = "darkslateblue", main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = "darkslateblue", main = "PIT all cause mortality NB GLARMA")
+
+# MA(1,2,19) AR(1,2,3,4)
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# MA(1,2,5,19) AR(1,2,3,4,19)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+#MA(1,2,3,19,20) AR(1,2,12)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+#MA(2,3,20) AR(2,3,12)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,3,4,5), thetaLags = c(6,12,14,20), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,3,4,5), thetaLags = c(6,12,14,20), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,2,3,4,5,19,20), thetaLags = c(6,10,12), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,2,3,4), thetaLags = 12, type = "NegBin", method = "FS", residuals = "Pearson")
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$All_cause_mortality, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 66.25265),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 80.62036),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 103.7003),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$All_cause_mortality, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 102.6265)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df, 3)
+
+# choose Complex NB GLARMA Pois GLM first as final model
+
+### If the p value is greater than 0.05 then the residuals are independent which we want for the model to be correct. If you simulate a white noise time series using the code below and use the same test for it then the p value will be greater than 0.05
+#rt_simple <- normRandPIT(glarma_negbin_simple_nbglm)$rt
+#Box.test(rt_simple, lag = 12, type =  "Ljung-Box", fitdf = 0)
+#rt_complex <- normRandPIT(glarma_negbin_complex_nbglm)$rt
+#Box.test(rt_complex, lag = 12, type =  "Ljung-Box", fitdf = 0)
+
+# Summary
+summary(glarma_negbin_complex_poisglm)
+
+# Model diagnostic tools
+histPIT(glarma_negbin_complex_poisglm, colHist = "darkslateblue", main = "PIT diagram")
+ggAcf(glarma_negbin_complex_poisglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_poisglm$residuals, main = "Partial autocorrelogram")
+# F(u) vs u
+qqPIT(glarma_negbin_complex_poisglm, col1 = "darkslateblue", main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+
+glarma_acm <- glarma_negbin_complex_poisglm
+summary(glarma_acm)
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(pre_1892_data$All_cause_mortality)
+acm_dat <- cbind(acm_dat, pre_1892_data$Date)
+colnames(acm_dat) <- c("Death", "Date")
+acm_dat$glarmafitted <- fitted(glarma_acm)
+acm_dat <- cbind(acm_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_acm$mu, size = coef(glarma_acm, type = "NB"))))
+ggplot(acm_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill="darkslateblue", alpha = 0.3) + geom_line(col="darkslateblue") +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "All cause mortality data versus GLARMA fitted values")
+```
+
+Bronchiolitis
+```{r}
+pre_1892_data$Bronchiolitis_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+glm_full_pois <- glm(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Bronchiolitis_age ~ log(Bronchiolitis_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+glm_aic_pois <- glm(formula = Bronchiolitis_age ~ log(Bronchiolitis_population) + 
+    fourier_3[, 1] + fourier_3[, 3] + fourier_3[, 4] + fourier_3[, 
+    5] + lin_trend + TB_month_mean + PA_month_mean + PA_month_min + 
+    PA_month_max + PA_month_sd + Heat_days + west + zuid + zuidwest + 
+    matig + stil + storm, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Bronchiolitis_age ~ log(Bronchiolitis_population) + 
+    fourier_2[, 1] + fourier_2[, 3] + fourier_2[, 4] + lin_trend + 
+    TB_month_mean + PA_month_max + Heat_days + west + matig + 
+    stil + storm, data = pre_1892_data, init.theta = 11.18801018, 
+    link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(1,2,3,4,5,6,7,8,9,10,12,14) AR(1,3,4,6)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,2,3,4,5,6,7,8,9,12,14) AR(1,3,4,6,8)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Bronchiolitis_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Bronchiolitis_population),
+           `Sine 1` = fourier_3[, 1], `Sine 2` = fourier_3[, 3],
+           `Cosine 2` = fourier_3[, 4], `Sine 3` = fourier_3[, 5],
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Mean pressure` = pre_1892_data$PA_month_mean,
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           `Heat days` = pre_1892_data$Heat_days,
+           West = pre_1892_data$west, Zuid = pre_1892_data$zuid,
+           Zuidwest = pre_1892_data$zuidwest, 
+           Matig = pre_1892_data$matig, Stil = pre_1892_data$stil, 
+           Storm = pre_1892_data$storm)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Bronchiolitis_population),
+           `Sine 1` = fourier_2[, 1], `Sine 2` = fourier_2[, 3],
+           `Cosine 2` = fourier_2[, 4],
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Heat days` = pre_1892_data$Heat_days,
+           West = pre_1892_data$west, 
+           Matig = pre_1892_data$matig, Stil = pre_1892_data$stil, 
+           Storm = pre_1892_data$storm)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 14, thetaLags = 6, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 14, thetaLags = 6, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 14, thetaLags = 8, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 14, thetaLags = 8, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[1], main = "PIT bronchiolitis Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[1], main = "PIT bronchiolitis NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[1], main = "PIT bronchiolitis Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[1], main = "PIT bronchiolitis NB GLARMA")
+
+# MA(1,2,3,4,5,8,9,10,12,17,20,21,25) AR(1,3,4,8)
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# MA(1,2,3,4,5,8,9,10,12,25) AR(1,3,8)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+# MA(1,2,3,4,5,6,9,12,15,16,17,20,21,22,23) AR(1,3,6)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+# MA(1,2,3,4,5,9,12,15,16,17,20,21,22,23) AR(1,3,6)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,3,4,5,8,12,14,15,20), thetaLags = c(6,9,10,17), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,3,4,5), thetaLags = c(6,9,10,12), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,2,3,4,5,9,12), thetaLags = c(6,8), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,2,3,4,5,9,12), thetaLags = c(6,8), type = "NegBin", method = "FS", residuals = "Pearson")
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 13.91412),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 12.09213),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 18.76626),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Bronchiolitis_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 25.72154)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+scoring_df
+
+round(scoring_df, 3)
+
+# glarma_negbin_complex_nbglm final model
+summary(glarma_negbin_complex_nbglm)
+
+histPIT(glarma_negbin_complex_nbglm, colHist = mycolors[1], main = "PIT diagram")
+ggAcf(glarma_negbin_complex_nbglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_nbglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_negbin_complex_nbglm, col1 = mycolors[1], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+glarma_bronchiolitis <- glarma_negbin_complex_nbglm
+summary(glarma_bronchiolitis)
+bronch_dat <- as.data.frame(pre_1892_data$Bronchiolitis_age)
+bronch_dat <- cbind(bronch_dat, pre_1892_data$Date)
+colnames(bronch_dat) <- c("Death", "Date")
+bronch_dat$glarmafitted <- fitted(glarma_bronchiolitis)
+bronch_dat <- cbind(bronch_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_bronchiolitis$mu, size = coef(glarma_bronchiolitis, type = "NB"))))
+ggplot(bronch_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[1], alpha = 0.3) + geom_line(col=mycolors[1]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Bronchiolitis data versus fitted values")
+```
+
+Diarrhoea
+```{r}
+pre_1892_data$Diarrhea_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(Diarrhea_age ~ log(Diarrhea_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Diarrhea_age ~ log(Diarrhea_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+
+glm_aic_pois <- glm(formula = Diarrhea_age ~ log(Diarrhea_population) + fourier_2[, 
+    2] + fourier_2[, 3] + fourier_2[, 4] + lin_trend + TB_month_mean + 
+    TB_month_min + TB_month_max + PA_month_min + PA_month_max + 
+    TB_month_sd + PA_month_sd + noordoost + oost + west + zuid + 
+    zuidwest + gladde + `harde storm` + stil + zacht + `Mean dry hours per day`, 
+    family = poisson(link = "log"), data = pre_1892_data)
+
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Diarrhea_age ~ log(Diarrhea_population) + fourier_2[, 
+    1] + fourier_2[, 3] + fourier_2[, 4] + lin_trend + TB_month_mean + 
+    TB_month_sd + oost + west + zuidwest + `bijna stil` + gladde + 
+    `harde storm` + rukwind + stil + `Mean dry hours per day`, 
+    data = pre_1892_data, init.theta = 26.67556504, link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+#  MA(1,9) and AR(1,9)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+#  MA(1,7,9) and AR(1,9)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Diarrhea_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Diarrhea_population),
+           `Cosine 1` = fourier_2[, 2],
+           `Sine 2` = fourier_2[, 3], 
+           `Cosine 2` = fourier_2[, 4], 
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Min temperature` = pre_1892_data$TB_month_min, 
+           `Max temperature` = pre_1892_data$TB_month_max, 
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Temperature sd` = pre_1892_data$TB_month_sd,
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           Noordoost = pre_1892_data$noordoost, Oost = pre_1892_data$oost,
+           West = pre_1892_data$west, Zuid = pre_1892_data$zuid,
+           Zuidwest = pre_1892_data$zuidwest, Gladde = pre_1892_data$gladde,
+           `Harde storm` = pre_1892_data$`harde storm`, 
+           Stil = pre_1892_data$stil, Zacht = pre_1892_data$zacht,
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Diarrhea_population),
+           `Sine 1` = fourier_2[, 1],
+           `Sine 2` = fourier_2[, 3], 
+           `Cosine 2` = fourier_2[, 4], 
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Temperature sd` = pre_1892_data$TB_month_sd,
+           Oost = pre_1892_data$oost,
+           West = pre_1892_data$west,
+           Zuidwest = pre_1892_data$zuidwest, 
+           `Bijna stil` = pre_1892_data$`bijna stil`,
+           Gladde = pre_1892_data$gladde,
+           `Harde storm` = pre_1892_data$`harde storm`, 
+           Rukwind = pre_1892_data$rukwind,
+           Stil = pre_1892_data$stil, 
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 9, thetaLags = 1, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 9, thetaLags = 1, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 9, thetaLags = 1, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 9, thetaLags = 1, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[7], main = "PIT diarrhoea Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[7], main = "PIT diarrhoea NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[7], main = "PIT diarrhoea Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[7], main = "PIT diarrhoea NB GLARMA")
+
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+# MA(11) AR(11) for Poisson NB GLM first
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(7,9,11), thetaLags = c(1,24), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(7,9,11), thetaLags = c(1,24), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(7,9,11), thetaLags = c(1,12,24), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(7,9,11), thetaLags = c(1,24), type = "NegBin", method = "FS", residuals = "Pearson")
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Diarrhea_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 32.71611),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 30.98003),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 35.24929),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Diarrhea_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 34.4452)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df,3)
+
+# Choose glarma_negbin_complex_nbglm
+
+glarma_diarrhoea <- glarma_negbin_complex_nbglm
+summary(glarma_diarrhoea)
+histPIT(glarma_negbin_complex_nbglm, colHist = mycolors[7], main = "PIT diagram")
+ggAcf(glarma_negbin_complex_nbglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_nbglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_negbin_complex_nbglm, col1 = mycolors[7], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+
+# Plotting
+diarrhea_dat <- as.data.frame(pre_1892_data$Diarrhea_age)
+diarrhea_dat <- cbind(diarrhea_dat, pre_1892_data$Date)
+colnames(diarrhea_dat) <- c("Death", "Date")
+diarrhea_dat$glarmafitted <- fitted(glarma_diarrhoea)
+diarrhea_dat <- cbind(diarrhea_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_diarrhoea$mu, size = coef(glarma_diarrhoea, type = "NB"))))
+ggplot(diarrhea_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[7], alpha = 0.3) + geom_line(col=mycolors[7]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Diarrhoea data versus fitted values")
+```
+
+Old
+```{r}
+pre_1892_data$Old_population <- pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Old_age ~ log(Old_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Old_age ~ log(Old_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Old_age ~ log(Old_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Old_age ~ log(Old_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Old_age ~ log(Old_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Old_age ~ log(Old_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Old_age ~ log(Old_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Old_age ~ log(Old_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(Old_age ~ log(Old_population) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Old_age ~ log(Old_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+glm_aic_pois <- glm(formula = Old_age ~ February + April + May + June + July + 
+    August + September + October + November + December + lin_trend + 
+    TB_month_mean + PA_month_min + TB_month_sd + PA_month_sd + 
+    oost + west + zuidoost + `bekwame koelte` + matig + `matige koelte` + 
+    rukwind + `slappe koelte` + storm + zacht + `Mean dry hours per day`, 
+    family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Old_age ~ fourier_5[, 1] + fourier_5[, 2] + 
+    fourier_5[, 4] + fourier_5[, 9] + fourier_5[, 10] + lin_trend + 
+    TB_month_mean + TB_month_sd + west + `bekwame koelte` + matig + 
+    `matige koelte` + `slappe koelte` + zacht + `Mean dry hours per day`, 
+    data = pre_1892_data, init.theta = 62.52675714, link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(1,2,3,21) AR(1,21)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,2,3,21) AR(1,21)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Old_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), 
+           February = pre_1892_data$February, April = pre_1892_data$April, 
+           May = pre_1892_data$May, June = pre_1892_data$June, 
+           July = pre_1892_data$July, August = pre_1892_data$August, 
+           September = pre_1892_data$September, October = pre_1892_data$October, 
+           November = pre_1892_data$November, December = pre_1892_data$December, 
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Temperature sd` = pre_1892_data$TB_month_sd,
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           Oost = pre_1892_data$oost, West = pre_1892_data$west, 
+           Zuidsoost = pre_1892_data$zuidoost, 
+           `Bekwame koelte` = pre_1892_data$`bekwame koelte`, 
+            Matig = pre_1892_data$matig, `Matige koelte` = pre_1892_data$`matige koelte`, 
+           Rukwind = pre_1892_data$rukwind, `Slappe koelte` = pre_1892_data$`slappe koelte`, 
+           Storm = pre_1892_data$storm, Zacht = pre_1892_data$zacht, 
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), 
+           `Sine 1` = fourier_5[,1], `Cosine 1` = fourier_5[,2],
+           `Cosine 2` = fourier_5[,4], `Sine 5` = fourier_5[,9],
+           `Cosine 5` = fourier_5[,10], Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Temperature sd` = pre_1892_data$TB_month_sd,
+           West = pre_1892_data$west, 
+           `Bekwame koelte` = pre_1892_data$`bekwame koelte`, 
+           Matig = pre_1892_data$matig, `Matige koelte` = pre_1892_data$`matige koelte`, 
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, 
+           Zacht = pre_1892_data$zacht, 
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 21, thetaLags = 3, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 21, thetaLags = 3, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 21, thetaLags = 3, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 21, thetaLags = 3, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[9], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[9], main = "PIT all cause mortality NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[9], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[9], main = "PIT all cause mortality NB GLARMA")
+
+# MA(1,2) AR(1)
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# MA(1,24) AR(1,3)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+#MA(1,2) AR(1)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+#MA(1,2) AR(1)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,21), thetaLags = 3, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,21), thetaLags = 3, type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,21), thetaLags = c(2,3), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,21), thetaLags = c(2,3), type = "NegBin", method = "FS", residuals = "Pearson")
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Old_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Old_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 56.67447),
+scoring.default(pre_1892_data$Old_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Old_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 65.42888),
+scoring.default(pre_1892_data$Old_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Old_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 64.35401),
+scoring.default(pre_1892_data$Old_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Old_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 80.16936)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df,3)
+
+summary(glarma_negbin_complex_nbglm)
+
+# choose glarma_poisson_complex_poisglm as final model
+
+histPIT(glarma_poisson_complex_poisglm, colHist = mycolors[9], main = "PIT diagram")
+ggAcf(glarma_poisson_complex_poisglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_poisson_complex_poisglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_poisson_complex_poisglm, col1 = mycolors[9], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+# Summary
+summary(glarma_old)
+glarma_old <- glarma_poisson_complex_poisglm
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(pre_1892_data$Old_age)
+acm_dat <- cbind(acm_dat, pre_1892_data$Date)
+colnames(acm_dat) <- c("Death", "Date")
+acm_dat$glarmafitted <- fitted(glarma_old)
+acm_dat <- cbind(acm_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qpois(p, lambda = glarma_old$mu)))
+ggplot(acm_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[9], alpha = 0.3) + geom_line(col=mycolors[9]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Old age causes of death data versus GLARMA fitted values")
+```
+
+Pneumonia
+```{r}
+pre_1892_data$Pneumonia_population <- pre_1892_data$pop_1 + pre_1892_data$pop_1_5 + pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(Pneumonia_age ~ log(Pneumonia_population) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Pneumonia_age ~ log(Pneumonia_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+glm_aic_pois <- glm(formula = Pneumonia_age ~ February + March + May + June + 
+    July + August + September + October + November + December + 
+    lin_trend + TB_month_mean + TB_month_max + PA_month_min + 
+    PA_month_max + PA_month_sd + Cold_days + Heat_days + noord + 
+    noordwest + zuidwest + `bijna stil` + gladde + `harde storm` + 
+    `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + 
+    stil + wakker + `Mean dry hours per day`, family = poisson(link = "log"), 
+    data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Pneumonia_age ~ fourier_3[, 1] + fourier_3[, 
+    3] + fourier_3[, 4] + lin_trend + TB_month_mean + TB_month_max + 
+    Cold_days + zuidwest + gladde + `slappe koelte` + stil + 
+    `Mean dry hours per day`, data = pre_1892_data, init.theta = 28.76511401, 
+    link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(1,2,4,5,6,7,15,16,21) AR(1,7,8,16,21,26)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,2,4,5,6,7,15,16,21) AR(1,7,8,16,21,26)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Pneumonia_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), 
+           February = pre_1892_data$February, March = pre_1892_data$March, 
+           May = pre_1892_data$May, 
+           June = pre_1892_data$June, July = pre_1892_data$July, 
+           August = pre_1892_data$August, September = pre_1892_data$September, 
+           October = pre_1892_data$October, November = pre_1892_data$November,
+           December = pre_1892_data$December, Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Max temperature` = pre_1892_data$TB_month_max, 
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           `Cold days` = pre_1892_data$Cold_days,
+           `Heat days` = pre_1892_data$Heat_days,
+           Noord = pre_1892_data$noord, Noordwest = pre_1892_data$noordwest,
+           Zuidwest = pre_1892_data$zuidwest,
+           `Bijna stil` = pre_1892_data$`bijna stil`, Gladde = pre_1892_data$gladde,
+           `Harde storm` = pre_1892_data$`harde storm`,
+           `Matige koelte` = pre_1892_data$`matige koelte`, 
+           Rukwind = pre_1892_data$rukwind,
+           `Slappe koelte` = pre_1892_data$`slappe koelte`,
+           `Stijve koelte` = pre_1892_data$`stijve koelte`, Stil = pre_1892_data$stil, 
+           Wakker = pre_1892_data$wakker,
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), 
+           `Sine 1` = fourier_3[,1], `Sine 2` = fourier_3[,3], 
+           `Cosine 2` = fourier_3[,4], Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Max temperature` = pre_1892_data$TB_month_max, 
+           `Cold days` = pre_1892_data$Cold_days,
+           Zuidwest = pre_1892_data$zuidwest,
+           Gladde = pre_1892_data$gladde,
+           `Slappe koelte` = pre_1892_data$`slappe koelte`,
+           Stil = pre_1892_data$stil, 
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 7, thetaLags = 1, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 7, thetaLags = 1, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 7, thetaLags = 1, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 7, thetaLags = 1, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[7], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[7], main = "PIT all cause mortality NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[7], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[7], main = "PIT all cause mortality NB GLARMA")
+
+# MA(21) AR(21)
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# MA(21) AR(21)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+# MA(2,21) AR(2,21)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+# MA(2,19,21) AR(2,19,21)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(2,7,12,16,21), thetaLags = 1, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(7,12,21), thetaLags = c(1), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(2,7,21), thetaLags = c(1,12), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(2,7,19,21), thetaLags = c(1,12), type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_complex_poisglm, colHist = mycolors[10], main = "PIT all cause mortality complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[10], main = "PIT all cause mortality complex NB GLARMA")
+histPIT(glarma_poisson_complex_nbglm, colHist = mycolors[10], main = "PIT all cause mortality complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_nbglm, colHist = mycolors[10], main = "PIT all cause mortality complex NB GLARMA")
+
+ggAcf(glarma_poisson_complex_poisglm$residuals)
+ggAcf(glarma_negbin_complex_poisglm$residuals)
+ggAcf(glarma_poisson_complex_nbglm$residuals)
+ggAcf(glarma_negbin_complex_nbglm$residuals)
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Pneumonia_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 35.00543),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 30.81523),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 37.04787),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Pneumonia_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 33.56374)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df,3)
+
+# choose Complex NB GLARMA Pois GLM first as final model
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[10], main = "PIT diagram")
+ggAcf(glarma_negbin_complex_poisglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_poisglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_negbin_complex_poisglm, col1 = mycolors[10], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+# Summary
+glarma_pneumonia <- glarma_negbin_complex_poisglm
+summary(glarma_pneumonia)
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(pre_1892_data$Pneumonia_age)
+acm_dat <- cbind(acm_dat, pre_1892_data$Date)
+colnames(acm_dat) <- c("Death", "Date")
+acm_dat$glarmafitted <- fitted(glarma_pneumonia)
+acm_dat <- cbind(acm_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_pneumonia$mu, size = coef(glarma_pneumonia, type = "NB"))))
+ggplot(acm_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[10], alpha = 0.3) + geom_line(col=mycolors[10]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Pneumonia data versus GLARMA fitted values")
+```
+
+Stroke
+```{r}
+pre_1892_data$Stroke_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75 + pre_1892_data$pop_75
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Stroke_age ~ log(Stroke_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(Stroke_age ~ log(Stroke_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Stroke_age ~ log(Stroke_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4] + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+glm_aic_pois <- glm(formula = Stroke_age ~ log(Stroke_population) + fourier_5[, 
+    2] + fourier_5[, 3] + fourier_5[, 6] + fourier_5[, 9] + lin_trend + 
+    TB_month_mean + Heat_days + noordwest + `matige koelte` + 
+    rukwind + `slappe koelte` + wakker, family = poisson(link = "log"), 
+    data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Stroke_age ~ log(Stroke_population) + fourier_2[, 
+    2] + fourier_2[, 3] + lin_trend + TB_month_mean + Heat_days + 
+    gladde + rukwind + `slappe koelte` + wakker, data = pre_1892_data, 
+    init.theta = 112.2677915, link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(24) AR(24)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,2,7,15,16,18,19,21) AR(1,7,21,26)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Stroke_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Stroke_population),
+           `Cosine 1` = fourier_5[,2], `Sine 2` = fourier_5[,3], 
+           `Cosine 3` = fourier_5[,6], `Sine 5` = fourier_5[,9], 
+           Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Heat days` = pre_1892_data$Heat_days,
+           Noordwest = pre_1892_data$noordwest,
+           `Matige koelte` = pre_1892_data$`matige koelte`, 
+           Rukwind = pre_1892_data$rukwind,
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, Wakker = pre_1892_data$wakker)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Stroke_population),
+           `Sine 1` = fourier_3[,1], `Sine 2` = fourier_3[,3], 
+           `Cosine 2` = fourier_3[,4], Trend = lin_trend, 
+           `Mean temperature` = pre_1892_data$TB_month_mean,
+           `Max temperature` = pre_1892_data$TB_month_max,
+           `Cold days` = pre_1892_data$Cold_days,
+           Zuidwest = pre_1892_data$zuidwest,
+           Gladde = pre_1892_data$gladde,
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, 
+           Stil = pre_1892_data$stil, `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 24, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 24, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 7, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 7, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[11], main = "PIT stroke Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[11], main = "PIT stroke NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[11], main = "PIT stroke Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[11], main = "PIT stroke NB GLARMA")
+
+# MA(1,2,19) AR(1,2,3,4)
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# MA(3,12) AR(3,12)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+#MA(25) AR(25)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+#MA(12) AR(12,25)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1:4,22,24,25), thetaLags = c(7,12,19), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,2,3,24), thetaLags = c(7,12), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,3,25), thetaLags = c(7), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,3,25), thetaLags = c(7,12), type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_complex_poisglm, colHist = mycolors[11], main = "PIT stroke complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[11], main = "PIT stroke complex NB GLARMA")
+histPIT(glarma_poisson_complex_nbglm, colHist = mycolors[11], main = "PIT stroke complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_nbglm, colHist = mycolors[11], main = "PIT stroke complex NB GLARMA")
+
+ggAcf(glarma_poisson_complex_poisglm$residuals)
+ggAcf(glarma_negbin_complex_poisglm$residuals)
+ggAcf(glarma_poisson_complex_nbglm$residuals)
+ggAcf(glarma_negbin_complex_nbglm$residuals)
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Stroke_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Stroke_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 134.923),
+scoring.default(pre_1892_data$Stroke_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Stroke_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 102.4832),
+scoring.default(pre_1892_data$Stroke_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Stroke_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 176.009),
+scoring.default(pre_1892_data$Stroke_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Stroke_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 112.439)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df,3)
+
+# choose Complex NB GLARMA Pois GLM first as final model
+
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[11], main = "PIT diagram")
+ggAcf(glarma_negbin_complex_poisglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_poisglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_negbin_complex_poisglm, col1 = mycolors[11], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+# Summary
+glarma_stroke <- glarma_negbin_complex_poisglm
+summary(glarma_stroke)
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(pre_1892_data$Stroke_age)
+acm_dat <- cbind(acm_dat, pre_1892_data$Date)
+colnames(acm_dat) <- c("Death", "Date")
+acm_dat$glarmafitted <- fitted(glarma_stroke)
+acm_dat <- cbind(acm_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_stroke$mu, size = coef(glarma_stroke, type = "NB"))))
+ggplot(acm_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[11], alpha = 0.3) + geom_line(col=mycolors[11]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Stroke data versus GLARMA fitted values")
+```
+
+Tuberculosis
+```{r}
+pre_1892_data$Tuberculosis_population <- pre_1892_data$pop_20_50 + pre_1892_data$pop_50_75
+
+# Poisson GLM
+glm_fourier_1_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_1[,1] + fourier_1[,2], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_2_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_3_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_4_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_5_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], family = poisson(link = "log"), data = pre_1892_data)
+glm_fourier_6_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], family = poisson(link = "log"), data = pre_1892_data)
+glm_month_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + February + March + April + May + June + July + August + September + October + November + December, family = poisson(link = "log"), data = pre_1892_data)
+
+# Negative binomial GLM
+glm_fourier_1_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_1[,1] + fourier_1[,2], link = "log", data = pre_1892_data)
+glm_fourier_2_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_2[,1] + fourier_2[,2] + fourier_2[,3] + fourier_2[,4], link = "log", data = pre_1892_data)
+glm_fourier_3_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_3[,1] + fourier_3[,2] + fourier_3[,3] + fourier_3[,4] + fourier_3[,5] + fourier_3[,6], link = "log", data = pre_1892_data)
+glm_fourier_4_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_4[,1] + fourier_4[,2] + fourier_4[,3] + fourier_4[,4] + fourier_4[,5] + fourier_4[,6] + fourier_4[,7] + fourier_4[,8], link = "log", data = pre_1892_data)
+glm_fourier_5_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_5[,1] + fourier_5[,2] + fourier_5[,3] + fourier_5[,4] + fourier_5[,5] + fourier_5[,6] + fourier_5[,7] + fourier_5[,8] + fourier_5[,9] + fourier_5[,10], link = "log", data = pre_1892_data)
+glm_fourier_6_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + fourier_6[,1] + fourier_6[,2] + fourier_6[,3] + fourier_6[,4] + fourier_6[,5] + fourier_6[,6] + fourier_6[,7] + fourier_6[,8] + fourier_6[,9] + fourier_6[,10] + fourier_6[,11], link = "log", data = pre_1892_data)
+glm_month_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + February + March + April + May + June + July + August + September + October + November + December, link = "log", data = pre_1892_data)
+
+# Full GLMs
+glm_full_pois <- glm(Tuberculosis_age ~ log(Tuberculosis_population) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, family = poisson(link = "log"), data = pre_1892_data)
+
+glm_full_nb <- glm.nb(Tuberculosis_age ~ log(Tuberculosis_population) + February + March + April + May + June + July + August + September + October + November + December + lin_trend + TB_month_mean + TB_month_min + TB_month_max + PA_month_mean + PA_month_min + PA_month_max + TB_month_sd + PA_month_sd + Cold_days + Heat_days + noord + noordoost + noordwest + oost + west + zuid + zuidoost + zuidwest + `bekwame koelte` + `bijna stil` + gladde + hard + `harde storm` + matig + `matige koelte` + rukwind + `slappe koelte` + `stijve koelte` + stil + storm + wakker + zacht + `Mean dry hours per day`, link = "log", data = pre_1892_data)
+
+# Backwards selection function using AIC 
+# Poisson model
+step(glm_full_pois)
+glm_aic_pois <- glm(formula = Tuberculosis_age ~ log(Tuberculosis_population) + 
+    February + March + May + June + July + August + September + 
+    October + November + December + TB_month_mean + TB_month_min + 
+    PA_month_min + PA_month_max + PA_month_sd + noordwest + `bijna stil` + 
+    hard + `matige koelte` + `slappe koelte` + `stijve koelte` + 
+    `Mean dry hours per day`, family = poisson(link = "log"), 
+    data = pre_1892_data)
+
+# Negative binomial model
+step(glm_full_nb)
+glm_aic_nb <- glm.nb(formula = Tuberculosis_age ~ log(Tuberculosis_population) + 
+    February + March + May + June + July + August + September + 
+    October + November + December + `bijna stil` + hard + `matige koelte` + 
+    `slappe koelte` + `stijve koelte`, data = pre_1892_data, 
+    init.theta = 109.8097075, link = "log")
+
+# (P)Acff plots, where very slight differences are observed in the (partial) autocorrelations between the Poisson and NB residuals
+# MA(1,3,4,16) AR(1)
+ggAcf(glm_aic_pois$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_pois$residuals, main = "Partial autocorrelogram")
+# MA(1,3,4,16) AR(1)
+ggAcf(glm_aic_nb$residuals, main = "Autocorrelogram")
+ggPacf(glm_aic_nb$residuals, main = "Partial autocorrelogram")
+
+# Y and X for GLARMA model using AIC
+Y <- pre_1892_data$Tuberculosis_age
+X_pois <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Tuberculosis_population),
+           February = pre_1892_data$February, March = pre_1892_data$March, 
+           May = pre_1892_data$May, 
+           June = pre_1892_data$June, July = pre_1892_data$July, 
+           August = pre_1892_data$August, September = pre_1892_data$September, 
+           October = pre_1892_data$October, November = pre_1892_data$November,
+           December = pre_1892_data$December,  
+           `Mean temperature` = pre_1892_data$TB_month_mean, 
+           `Min temperature` = pre_1892_data$TB_month_min, 
+           `Min pressure` = pre_1892_data$PA_month_min,
+           `Max pressure` = pre_1892_data$PA_month_max, 
+           `Pressure sd` = pre_1892_data$PA_month_sd,
+           Noordwest = pre_1892_data$noordwest,
+           West = pre_1892_data$west, Zuid = pre_1892_data$zuid,
+           `Bijna stil` = pre_1892_data$`bijna stil`, Hard = pre_1892_data$hard,
+           `Matige koelte` = pre_1892_data$`matige koelte`, 
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, 
+           `Stijve koelte` = pre_1892_data$`stijve koelte`,
+           `Dry hours` = pre_1892_data$`Mean dry hours per day`)
+
+X_nb <- cbind(Intercept = rep(1, nrow(pre_1892_data)), Population = log(pre_1892_data$Tuberculosis_population),
+           February = pre_1892_data$February, March = pre_1892_data$March, 
+           May = pre_1892_data$May, 
+           June = pre_1892_data$June, July = pre_1892_data$July, 
+           August = pre_1892_data$August, September = pre_1892_data$September, 
+           October = pre_1892_data$October, November = pre_1892_data$November,
+           December = pre_1892_data$December,  
+           `Bijna stil` = pre_1892_data$`bijna stil`, Hard = pre_1892_data$hard,
+           `Matige koelte` = pre_1892_data$`matige koelte`, 
+           `Slappe koelte` = pre_1892_data$`slappe koelte`, 
+           `Stijve koelte` = pre_1892_data$`stijve koelte`)
+
+glarma_poisson_simple_poisglm <- glarma(Y, X_pois, phiLags = 1, thetaLags = 4, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_poisglm <- glarma(Y, X_pois, phiLags = 1, thetaLags = 4, type = "NegBin", method = "FS", residuals = "Pearson")
+
+glarma_poisson_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 4, type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_simple_nbglm <- glarma(Y, X_nb, phiLags = 1, thetaLags = 4, type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_simple_poisglm, colHist = mycolors[12], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_poisglm, colHist = mycolors[12], main = "PIT all cause mortality NB GLARMA")
+histPIT(glarma_poisson_simple_nbglm, colHist = mycolors[12], main = "PIT all cause mortality Poisson GLARMA")
+histPIT(glarma_negbin_simple_nbglm, colHist = mycolors[12], main = "PIT all cause mortality NB GLARMA")
+
+ggAcf(glarma_poisson_simple_poisglm$residuals)
+ggPacf(glarma_poisson_simple_poisglm$residuals)
+# AR(3,12)
+ggAcf(glarma_negbin_simple_poisglm$residuals)
+ggPacf(glarma_negbin_simple_poisglm$residuals)
+# AR(12)
+ggAcf(glarma_poisson_simple_nbglm$residuals)
+ggPacf(glarma_poisson_simple_nbglm$residuals)
+# AR(12)
+ggAcf(glarma_negbin_simple_nbglm$residuals)
+ggPacf(glarma_negbin_simple_nbglm$residuals)
+
+glarma_poisson_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,12), thetaLags = c(3,4,11), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_poisglm <- glarma(Y, X_pois, phiLags = c(1,12), thetaLags = c(3,4,11), type = "NegBin", method = "FS", residuals = "Pearson")
+glarma_poisson_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,12), thetaLags = c(3,4,11), type = "Poi", method = "FS", residuals = "Pearson")
+glarma_negbin_complex_nbglm <- glarma(Y, X_nb, phiLags = c(1,12), thetaLags = c(3,4,11), type = "NegBin", method = "FS", residuals = "Pearson")
+
+histPIT(glarma_poisson_complex_poisglm, colHist = mycolors[12], main = "PIT all cause mortality complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[12], main = "PIT all cause mortality complex NB GLARMA")
+histPIT(glarma_poisson_complex_nbglm, colHist = mycolors[12], main = "PIT all cause mortality complex Poisson GLARMA")
+histPIT(glarma_negbin_complex_nbglm, colHist = mycolors[12], main = "PIT all cause mortality complex NB GLARMA")
+
+ggAcf(glarma_poisson_complex_poisglm$residuals)
+ggAcf(glarma_negbin_complex_poisglm$residuals)
+ggAcf(glarma_poisson_complex_nbglm$residuals)
+ggAcf(glarma_negbin_complex_nbglm$residuals)
+
+# Scoring
+scoring_df <- as.data.frame(rbind(
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_poisson_simple_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_negbin_simple_poisglm$fitted.values, distr = "nbinom", distrcoefs = 114.0732),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_poisson_simple_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_negbin_simple_nbglm$fitted.values, distr = "nbinom", distrcoefs = 117.9536),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_poisson_complex_poisglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_negbin_complex_poisglm$fitted.values, distr = "nbinom", distrcoefs = 168.4361),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_poisson_complex_nbglm$fitted.values, distr = "poisson"),
+scoring.default(pre_1892_data$Tuberculosis_age, glarma_negbin_complex_nbglm$fitted.values, distr = "nbinom", distrcoefs = 135.0577)))
+rownames(scoring_df) <- c("Simple Pois GLARMA Pois GLM first", "Simple NB GLARMA Pois GLM first", "Simple Pois GLARMA NB GLM first", "Simple NB GLARMA NB GLM first", "Complex Pois GLARMA Pois GLM first", "Complex NB GLARMA Pois GLM first", "Complex Pois GLARMA NB GLM first", "Complex NB GLARMA NB first")
+round(scoring_df,3)
+
+# choose glarma_negbin_complex_nbglm as final model
+
+histPIT(glarma_negbin_complex_poisglm, colHist = mycolors[12], main = "PIT diagram")
+ggAcf(glarma_negbin_complex_poisglm$residuals, main = "Autocorrelogram")
+ggPacf(glarma_negbin_complex_poisglm$residuals, main = "Partial autocorrelogram")
+qqPIT(glarma_negbin_complex_poisglm, col1 = mycolors[12], main = TeX(r'($\bar{F}(u)$ versus $u$)', italic=TRUE))
+
+# Summary
+summary(glarma_negbin_complex_poisglm)
+
+glarma_tuberculosis <- glarma_negbin_complex_poisglm
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(pre_1892_data$Tuberculosis_age)
+acm_dat <- cbind(acm_dat, pre_1892_data$Date)
+colnames(acm_dat) <- c("Death", "Date")
+acm_dat$glarmafitted <- fitted(glarma_tuberculosis)
+acm_dat <- cbind(acm_dat,
+    sapply(c(glarmalower=0.025, glarmaupper=0.975), function (p)
+        qnbinom(p, mu = glarma_tuberculosis$mu, size = coef(glarma_tuberculosis, type = "NB"))))
+ggplot(acm_dat, aes(x=Date, ymin=glarmalower, y=glarmafitted, ymax=glarmaupper)) +
+    geom_ribbon(fill=mycolors[12], alpha = 0.3) + geom_line(col=mycolors[12]) +
+    geom_point(aes(y=Death), pch=20) +
+    labs(y = "Mortality counts") +
+    labs(title = "Tuberculosis data versus GLARMA fitted values")
+```
+
+Forecasting
+
+Data prep
+```{r}
+forecast_data <- rbind(pre_1892_data, post_1892_data)
+rownames(forecast_data) <- 1:nrow(forecast_data)
+lin_trend_forecast_full <- c(1:432, 463:588)
+fourier_forecast_1 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 1)
+fourier_forecast_2 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 2)
+fourier_forecast_3 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 3)
+fourier_forecast_4 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 4)
+fourier_forecast_5 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 5)
+fourier_forecast_6 <- fourier(ts(data = 1:564, start = c(1856, 1), end = c(1902, 12),  frequency = 12), 6)
+fourier_forecast_1 <- fourier_forecast_1[c(1:432, 439:nrow(fourier_forecast_1)),]
+fourier_forecast_2 <- fourier_forecast_2[c(1:432, 439:nrow(fourier_forecast_2)),]
+fourier_forecast_3 <- fourier_forecast_3[c(1:432, 439:nrow(fourier_forecast_3)),]
+fourier_forecast_4 <- fourier_forecast_4[c(1:432, 439:nrow(fourier_forecast_4)),]
+fourier_forecast_5 <- fourier_forecast_5[c(1:432, 439:nrow(fourier_forecast_5)),]
+fourier_forecast_6 <- fourier_forecast_6[c(1:432, 439:nrow(fourier_forecast_6)),]
+
+lin_trend_small <- 463:588
+fourier_forecast_small_1 <- fourier_forecast_1[433:nrow(fourier_forecast_1),]
+fourier_forecast_small_2 <- fourier_forecast_2[433:nrow(fourier_forecast_2),]
+fourier_forecast_small_3 <- fourier_forecast_3[433:nrow(fourier_forecast_3),]
+fourier_forecast_small_4 <- fourier_forecast_4[433:nrow(fourier_forecast_4),]
+fourier_forecast_small_5 <- fourier_forecast_5[433:nrow(fourier_forecast_5),]
+fourier_forecast_small_6 <- fourier_forecast_6[433:nrow(fourier_forecast_6),]
+
+```
+
+All cause mortailty
+```{r}
+glarma_acm
+
+X_pred_acm <- cbind(Intercept = rep(1, nrow(post_1892_data)), Population = log(post_1892_data$pop_tot),
+           February = post_1892_data$February, March = post_1892_data$March, 
+           April = post_1892_data$April, May = post_1892_data$May, 
+           June = post_1892_data$June, July = post_1892_data$July, 
+           August = post_1892_data$August, September = post_1892_data$September, 
+           October = post_1892_data$October, November = post_1892_data$November,
+           December = post_1892_data$December, Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Min temperature` = post_1892_data$TB_month_min, 
+           `Max temperature` = post_1892_data$TB_month_max, 
+           `Mean pressure` = post_1892_data$PA_month_mean,
+           `Min pressure` = post_1892_data$PA_month_min,
+           `Max pressure` = post_1892_data$PA_month_max, 
+           `Pressure sd` = post_1892_data$PA_month_sd,
+           `Cold days` = post_1892_data$Cold_days,
+           `Heat days` = post_1892_data$Heat_days,
+           Noordoost = post_1892_data$noordoost, Noordwest = post_1892_data$noordwest,
+           West = post_1892_data$west, Zuid = post_1892_data$zuid,
+           Zuidsoost = post_1892_data$zuidoost, Zuidwest = post_1892_data$zuidwest, 
+           `Bekwame koelte` = post_1892_data$`bekwame koelte`, 
+           `Bijna stil` = post_1892_data$`bijna stil`, Gladde = post_1892_data$gladde,
+            Matig = post_1892_data$matig, `Matige koelte` = post_1892_data$`matige koelte`, 
+           `Slappe koelte` = post_1892_data$`slappe koelte`, Stil = post_1892_data$stil, 
+           `Dry hours` = post_1892_data$`Mean dry hours per day`)
+
+# True simulation
+forecast_acm_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_acm_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_acm_Y[i,j] <- forecast(glarma_acm, n.ahead = 1, newdata = matrix(X_pred_acm[i,], nrow = 1))$Y
+    forecast_acm_mu[i,j] <- forecast(glarma_acm, n.ahead = 1, newdata = matrix(X_pred_acm[i,], nrow = 1))$mu
+  }
+}
+pred_acm <- rowMeans(forecast_acm_Y)
+
+### Plotting with 95% CI
+acm_dat <- as.data.frame(combined_data$All_cause_mortality)
+acm_dat <- cbind(acm_dat, combined_data$Date, c(rep(NA,462),pred_acm))
+colnames(acm_dat) <- c("Data", "Date", "Predicted")
+acm_dat <- acm_dat %>%
+  gather(key = "Type", value = "value", -Date)
+acm_dat <- as.data.frame(acm_dat)
+acm_dat$Type <- as.factor(acm_dat$Type)
+acm_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_acm_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_acm_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+acm_ci <- cbind(acm_ci, Date = combined_data$Date)
+acm_dat <- acm_dat[c(463:588, 1051:1176),]
+acm_ci <- acm_ci[463:nrow(acm_ci),]
+
+ggplot(acm_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=acm_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = "darkslateblue", alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha("darkslateblue", 1), alpha("darkslateblue", 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "All cause mortality data versus GLARMA predicted values")
+
+
+sqrt(mean((post_1892_data$All_cause_mortality - pred_acm)^2))
+mean(abs(post_1892_data$All_cause_mortality - pred_acm))
+
+#### Method 2 with dynamic parameter forecast (dpf) ####
+
+#X_pred_dpf_acm <- cbind(Intercept = rep(1, nrow(forecast_data)), Population = log(forecast_data$pop_tot),
+#           February = forecast_data$February, March = forecast_data$March, 
+#           April = forecast_data$April, May = forecast_data$May, 
+#           June = forecast_data$June, July = forecast_data$July, 
+#           August = forecast_data$August, September = forecast_data$September, 
+#           October = forecast_data$October, November = forecast_data$November,
+#           December = forecast_data$December, Trend = lin_trend_forecast_full, 
+#           `Mean temperature` = forecast_data$TB_month_mean, 
+#           `Min temperature` = forecast_data$TB_month_min, 
+#           `Max temperature` = forecast_data$TB_month_max, 
+#           `Mean pressure` = forecast_data$PA_month_mean,
+#           `Min pressure` = forecast_data$PA_month_min,
+#           `Max pressure` = forecast_data$PA_month_max, 
+#           `Pressure sd` = forecast_data$PA_month_sd,
+#           `Cold days` = forecast_data$Cold_days,
+#           `Heat days` = forecast_data$Heat_days,
+#           Noordoost = forecast_data$noordoost, Noordwest = forecast_data$noordwest,
+#           West = forecast_data$west, Zuid = forecast_data$zuid,
+#           Zuidsoost = forecast_data$zuidoost, Zuidwest = forecast_data$zuidwest, 
+#           `Bekwame koelte` = forecast_data$`bekwame koelte`, 
+#           `Bijna stil` = forecast_data$`bijna stil`, Gladde = forecast_data$gladde,
+#            Matig = forecast_data$matig, `Matige koelte` = forecast_data$`matige koelte`, 
+#           `Slappe koelte` = forecast_data$`slappe koelte`, Stil = forecast_data$stil, 
+#           `Dry hours` = forecast_data$`Mean dry hours per day`)
+
+#forecast_dpf_acm_Y <- matrix(ncol = 1000, nrow = 126)
+#forecast_dpf_acm_mu <- matrix(ncol = 1000, nrow = 126)
+#for(i in 432:587){
+#  Y <- as.matrix(forecast_data$All_cause_mortality[1:i])
+#  X <- as.matrix(X_pred_dpf_acm[1:i,])
+#  glarma_dpf_acm <- glarma(Y, X, phiLags = c(1,2,3,4,5), thetaLags = c(6,12,14,20), type = "NegBin", method = "FS", residuals = "Pearson")
+#  #X1 <- matrix(X_pred_dpf_acm[i+1, ], nrow = 1)
+#  for(j in 1:1000){
+#    set.seed(j)
+#    forecast_dpf_acm_Y[i,j] <- forecast(glarma_dpf_acm, n.ahead = 1, newdata = matrix(X_pred_dpf_acm[i+1, ], nrow = 1))$Y
+#    forecast_dpf_acm_mu[i,j] <- forecast(glarma_dpf_acm, n.ahead = 1, newdata = matrix(X_pred_dpf_acm[i+1, ], nrow = 1))$mu
+#  }
+#}
+#pred_dpf_acm <- rowMeans(forecast_acm_Y)
+#post_1892_data$All_cause_mortality
+```
+
+Bronchiolitis
+```{r}
+X_pred_bronchiolitis <- cbind(Intercept = rep(1, nrow(post_1892_data)), Population = log(post_1892_data$Bronchiolitis_population),
+           `Sine 1` = fourier_forecast_small_2[, 1], `Sine 2` = fourier_forecast_small_2[, 3],
+           `Cosine 2` = fourier_forecast_small_2[, 4],
+           Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Max pressure` = post_1892_data$PA_month_max, 
+           `Heat days` = post_1892_data$Heat_days,
+           West = post_1892_data$west, 
+           Matig = post_1892_data$matig, Stil = post_1892_data$stil, 
+           Storm = post_1892_data$storm)
+
+# True simulation
+forecast_bronchiolitis_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_bronchiolitis_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_bronchiolitis_Y[i,j] <- forecast(glarma_bronchiolitis, n.ahead = 1, newdata = matrix(X_pred_bronchiolitis[i,], nrow = 1))$Y
+    forecast_bronchiolitis_mu[i,j] <- forecast(glarma_bronchiolitis, n.ahead = 1, newdata = matrix(X_pred_bronchiolitis[i,], nrow = 1))$mu
+  }
+}
+pred_bronchiolitis <- rowMeans(forecast_bronchiolitis_Y)
+
+### Plotting with 95% CI
+bronchiolitis_dat <- as.data.frame(combined_data$Bronchiolitis_age)
+bronchiolitis_dat <- cbind(bronchiolitis_dat, combined_data$Date, c(rep(NA,462),pred_bronchiolitis))
+colnames(bronchiolitis_dat) <- c("Data", "Date", "Predicted")
+bronchiolitis_dat <- bronchiolitis_dat %>%
+  gather(key = "Type", value = "value", -Date)
+bronchiolitis_dat <- as.data.frame(bronchiolitis_dat)
+bronchiolitis_dat$Type <- as.factor(bronchiolitis_dat$Type)
+bronchiolitis_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_bronchiolitis_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_bronchiolitis_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+bronchiolitis_ci <- cbind(bronchiolitis_ci, Date = combined_data$Date)
+bronchiolitis_dat <- bronchiolitis_dat[c(463:588, 1051:1176),]
+bronchiolitis_ci <- bronchiolitis_ci[463:nrow(bronchiolitis_ci),]
+
+ggplot(bronchiolitis_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=bronchiolitis_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[1], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[1], 1), alpha(mycolors[1], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Bronchiolitis data versus GLARMA predicted values")
+
+sqrt(mean((post_1892_data$Bronchiolitis_age - pred_bronchiolitis)^2))
+mean(abs(post_1892_data$Bronchiolitis_age - pred_bronchiolitis))
+
+```
+
+Diarrhea
+```{r}
+X_pred_diarrhea <- cbind(Intercept = rep(1, nrow(post_1892_data)), Population = log(post_1892_data$Diarrhea_population),
+           `Sine 1` = fourier_forecast_small_2[, 1],
+           `Sine 2` = fourier_forecast_small_2[, 3], 
+           `Cosine 2` = fourier_forecast_small_2[, 4], 
+           Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Temperature sd` = post_1892_data$TB_month_sd,
+           Oost = post_1892_data$oost,
+           West = post_1892_data$west,
+           Zuidwest = post_1892_data$zuidwest, 
+           `Bijna stil` = post_1892_data$`bijna stil`,
+           Gladde = post_1892_data$gladde,
+           `Harde storm` = post_1892_data$`harde storm`, 
+           Rukwind = post_1892_data$rukwind,
+           Stil = post_1892_data$stil, 
+           `Dry hours` = post_1892_data$`Mean dry hours per day`)
+
+# True simulation
+forecast_diarrhea_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_diarrhea_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_diarrhea_Y[i,j] <- forecast(glarma_diarrhoea, n.ahead = 1, newdata = matrix(X_pred_diarrhea[i,], nrow = 1))$Y
+    forecast_diarrhea_mu[i,j] <- forecast(glarma_diarrhoea, n.ahead = 1, newdata = matrix(X_pred_diarrhea[i,], nrow = 1))$mu
+  }
+}
+pred_diarrhea <- rowMeans(forecast_diarrhea_Y)
+
+### Plotting with 95% CI
+diarrhoea_dat <- as.data.frame(combined_data$Diarrhea_age)
+diarrhoea_dat <- cbind(diarrhoea_dat, combined_data$Date, c(rep(NA,462),pred_diarrhea))
+colnames(diarrhoea_dat) <- c("Data", "Date", "Predicted")
+diarrhoea_dat <- diarrhoea_dat %>%
+  gather(key = "Type", value = "value", -Date)
+diarrhoea_dat <- as.data.frame(diarrhoea_dat)
+diarrhoea_dat$Type <- as.factor(diarrhoea_dat$Type)
+diarrhoea_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_diarrhea_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_diarrhea_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+diarrhoea_ci <- cbind(diarrhoea_ci, Date = combined_data$Date)
+diarrhoea_dat <- diarrhoea_dat[c(463:588, 1051:1176),]
+diarrhoea_ci <- diarrhoea_ci[463:nrow(diarrhoea_ci),]
+
+ggplot(diarrhoea_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=diarrhoea_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[7], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[7], 1), alpha(mycolors[7], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Diarrhoea data versus GLARMA predicted values")
+
+sqrt(mean((post_1892_data$Diarrhea_age-pred_diarrhea)^2))
+mean(abs(post_1892_data$Diarrhea_age-pred_diarrhea))
+```
+
+Old
+```{r}
+X_pred_old <- cbind(Intercept = rep(1, nrow(post_1892_data)), 
+           February = post_1892_data$February, April = post_1892_data$April, 
+           May = post_1892_data$May, June = post_1892_data$June, 
+           July = post_1892_data$July, August = post_1892_data$August, 
+           September = post_1892_data$September, October = post_1892_data$October, 
+           November = post_1892_data$November, December = post_1892_data$December, 
+           Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Min pressure` = post_1892_data$PA_month_min,
+           `Temperature sd` = post_1892_data$TB_month_sd,
+           `Pressure sd` = post_1892_data$PA_month_sd,
+           Oost = post_1892_data$oost, West = post_1892_data$west, 
+           Zuidsoost = post_1892_data$zuidoost, 
+           `Bekwame koelte` = post_1892_data$`bekwame koelte`, 
+            Matig = post_1892_data$matig, `Matige koelte` = post_1892_data$`matige koelte`, 
+           Rukwind = post_1892_data$rukwind, `Slappe koelte` = post_1892_data$`slappe koelte`, 
+           Storm = post_1892_data$storm, Zacht = post_1892_data$zacht, 
+           `Dry hours` = post_1892_data$`Mean dry hours per day`)
+
+# True simulation
+forecast_old_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_old_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_old_Y[i,j] <- forecast(glarma_old, n.ahead = 1, newdata = matrix(X_pred_old[i,], nrow = 1))$Y
+    forecast_old_mu[i,j] <- forecast(glarma_old, n.ahead = 1, newdata = matrix(X_pred_old[i,], nrow = 1))$mu
+  }
+}
+pred_old <- rowMeans(forecast_old_Y)
+
+old_dat <- as.data.frame(combined_data$Old_age)
+old_dat <- cbind(old_dat, combined_data$Date, c(rep(NA,462),pred_old))
+colnames(old_dat) <- c("Data", "Date", "Predicted")
+old_dat <- old_dat %>%
+  gather(key = "Type", value = "value", -Date)
+old_dat <- as.data.frame(old_dat)
+old_dat$Type <- as.factor(old_dat$Type)
+old_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_old_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_old_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+old_ci <- cbind(old_ci, Date = combined_data$Date)
+old_dat <- old_dat[c(463:588, 1051:1176),]
+old_ci <- old_ci[463:nrow(old_ci),]
+ggplot(old_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=old_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[9], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[9], 1), alpha(mycolors[9], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Old age causes of death data versus GLARMA predicted values")
+
+# RMSE
+sqrt(mean((post_1892_data$Old_age-pred_old)^2))
+mean(abs(post_1892_data$Old_age-pred_old))
+
+```
+
+Pneumonia
+```{r}
+X_pred_pneumonia <- cbind(Intercept = rep(1, nrow(post_1892_data)), 
+           February = post_1892_data$February, March = post_1892_data$March, 
+           May = post_1892_data$May, 
+           June = post_1892_data$June, July = post_1892_data$July, 
+           August = post_1892_data$August, September = post_1892_data$September, 
+           October = post_1892_data$October, November = post_1892_data$November,
+           December = post_1892_data$December, Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Max temperature` = post_1892_data$TB_month_max, 
+           `Min pressure` = post_1892_data$PA_month_min,
+           `Max pressure` = post_1892_data$PA_month_max, 
+           `Pressure sd` = post_1892_data$PA_month_sd,
+           `Cold days` = post_1892_data$Cold_days,
+           `Heat days` = post_1892_data$Heat_days,
+           Noord = post_1892_data$noord, Noordwest = post_1892_data$noordwest,
+           Zuidwest = post_1892_data$zuidwest,
+           `Bijna stil` = post_1892_data$`bijna stil`, Gladde = post_1892_data$gladde,
+           `Harde storm` = post_1892_data$`harde storm`,
+           `Matige koelte` = post_1892_data$`matige koelte`, 
+           Rukwind = post_1892_data$rukwind,
+           `Slappe koelte` = post_1892_data$`slappe koelte`,
+           `Stijve koelte` = post_1892_data$`stijve koelte`, Stil = post_1892_data$stil, 
+           Wakker = post_1892_data$wakker,
+           `Dry hours` = post_1892_data$`Mean dry hours per day`)
+
+# True simulation
+forecast_pneumonia_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_pneumonia_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_pneumonia_Y[i,j] <- forecast(glarma_pneumonia, n.ahead = 1, newdata = matrix(X_pred_pneumonia[i,], nrow = 1))$Y
+    forecast_pneumonia_mu[i,j] <- forecast(glarma_pneumonia, n.ahead = 1, newdata = matrix(X_pred_pneumonia[i,], nrow = 1))$mu
+  }
+}
+pred_pneumonia <- rowMeans(forecast_pneumonia_Y)
+
+pneumonia_dat <- as.data.frame(combined_data$Pneumonia_age)
+pneumonia_dat <- cbind(pneumonia_dat, combined_data$Date, c(rep(NA,462),pred_pneumonia))
+colnames(pneumonia_dat) <- c("Data", "Date", "Predicted")
+pneumonia_dat <- pneumonia_dat %>%
+  gather(key = "Type", value = "value", -Date)
+pneumonia_dat <- as.data.frame(pneumonia_dat)
+pneumonia_dat$Type <- as.factor(pneumonia_dat$Type)
+pneumonia_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_pneumonia_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_pneumonia_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+pneumonia_ci <- cbind(pneumonia_ci, Date = combined_data$Date)
+pneumonia_dat <- pneumonia_dat[c(463:588, 1051:1176),]
+pneumonia_ci <- pneumonia_ci[463:nrow(pneumonia_ci),]
+
+ggplot(pneumonia_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=pneumonia_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[10], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[10], 1), alpha(mycolors[10], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Pneumonia data versus GLARMA predicted values")
+
+# RMSE and MAE
+sqrt(mean((post_1892_data$Pneumonia_age-pred_pneumonia)^2))
+mean(abs(post_1892_data$Pneumonia_age-pred_pneumonia))
+```
+
+Stroke
+```{r}
+X_pred_stroke <- cbind(Intercept = rep(1, nrow(post_1892_data)), Population = log(post_1892_data$Stroke_population),
+           `Cosine 1` = fourier_forecast_small_5[,2], `Sine 2` = fourier_forecast_small_5[,3], 
+           `Cosine 3` = fourier_forecast_small_5[,6], `Sine 5` = fourier_forecast_small_5[,9], 
+           Trend = lin_trend_small, 
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Heat days` = post_1892_data$Heat_days,
+           Noordwest = post_1892_data$noordwest,
+           `Matige koelte` = post_1892_data$`matige koelte`, 
+           Rukwind = post_1892_data$rukwind,
+           `Slappe koelte` = post_1892_data$`slappe koelte`, Wakker = post_1892_data$wakker)
+
+# True simulation
+forecast_stroke_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_stroke_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_stroke_Y[i,j] <- forecast(glarma_stroke, n.ahead = 1, newdata = matrix(X_pred_stroke[i,], nrow = 1))$Y
+    forecast_stroke_mu[i,j] <- forecast(glarma_stroke, n.ahead = 1, newdata = matrix(X_pred_stroke[i,], nrow = 1))$mu
+  }
+}
+pred_stroke <- rowMeans(forecast_stroke_Y)
+
+stroke_dat <- as.data.frame(combined_data$Stroke_age)
+stroke_dat <- cbind(stroke_dat, combined_data$Date, c(rep(NA,462),pred_stroke))
+colnames(stroke_dat) <- c("Data", "Date", "Predicted")
+stroke_dat <- stroke_dat %>%
+  gather(key = "Type", value = "value", -Date)
+stroke_dat <- as.data.frame(stroke_dat)
+stroke_dat$Type <- as.factor(stroke_dat$Type)
+stroke_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_stroke_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_stroke_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+stroke_ci <- cbind(stroke_ci, Date = combined_data$Date)
+stroke_dat <- stroke_dat[c(463:588, 1051:1176),]
+stroke_ci <- stroke_ci[463:nrow(stroke_ci),]
+
+ggplot(stroke_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=stroke_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[11], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[11], 1), alpha(mycolors[11], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Stroke data versus GLARMA predicted values")
+
+# RMSE
+sqrt(mean((post_1892_data$Stroke_age-pred_stroke)^2))
+mean(abs(post_1892_data$Stroke_age-pred_stroke))
+
+```
+
+Tuberculosis
+```{r}
+X_pred_tuberculosis <- cbind(Intercept = rep(1, nrow(post_1892_data)), Population = log(post_1892_data$Tuberculosis_population),
+           February = post_1892_data$February, March = post_1892_data$March, 
+           May = post_1892_data$May, 
+           June = post_1892_data$June, July = post_1892_data$July, 
+           August = post_1892_data$August, September = post_1892_data$September, 
+           October = post_1892_data$October, November = post_1892_data$November,
+           December = post_1892_data$December,  
+           `Mean temperature` = post_1892_data$TB_month_mean, 
+           `Min temperature` = post_1892_data$TB_month_min, 
+           `Min pressure` = post_1892_data$PA_month_min,
+           `Max pressure` = post_1892_data$PA_month_max, 
+           `Pressure sd` = post_1892_data$PA_month_sd,
+           Noordwest = post_1892_data$noordwest,
+           West = post_1892_data$west, Zuid = post_1892_data$zuid,
+           `Bijna stil` = post_1892_data$`bijna stil`, Hard = post_1892_data$hard,
+           `Matige koelte` = post_1892_data$`matige koelte`, 
+           `Slappe koelte` = post_1892_data$`slappe koelte`, 
+           `Stijve koelte` = post_1892_data$`stijve koelte`,
+           `Dry hours` = post_1892_data$`Mean dry hours per day`)
+
+# True simulation
+forecast_tuberculosis_Y <- matrix(ncol = 1000, nrow = 126)
+forecast_tuberculosis_mu <- matrix(ncol = 1000, nrow = 126)
+for(i in 1:126){
+  for(j in 1:1000){
+    set.seed(j)
+    forecast_tuberculosis_Y[i,j] <- forecast(glarma_tuberculosis, n.ahead = 1, newdata = matrix(X_pred_tuberculosis[i,], nrow = 1))$Y
+    forecast_tuberculosis_mu[i,j] <- forecast(glarma_tuberculosis, n.ahead = 1, newdata = matrix(X_pred_tuberculosis[i,], nrow = 1))$mu
+  }
+}
+pred_tuberculosis <- rowMeans(forecast_tuberculosis_Y)
+
+tuberculosis_dat <- as.data.frame(combined_data$Tuberculosis_age)
+tuberculosis_dat <- cbind(tuberculosis_dat, combined_data$Date, c(rep(NA,462),pred_tuberculosis))
+colnames(tuberculosis_dat) <- c("Data", "Date", "Predicted")
+tuberculosis_dat <- tuberculosis_dat %>%
+  gather(key = "Type", value = "value", -Date)
+tuberculosis_dat <- as.data.frame(tuberculosis_dat)
+tuberculosis_dat$Type <- as.factor(tuberculosis_dat$Type)
+tuberculosis_ci <- as.data.frame(cbind(lower = c(rep(NA,462), apply(forecast_tuberculosis_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[1,]),
+upper = c(rep(NA,462), apply(forecast_tuberculosis_Y, MARGIN = 1, quantile, probs = c(0.025, 0.975))[2,])))
+tuberculosis_ci <- cbind(tuberculosis_ci, Date = combined_data$Date)
+tuberculosis_dat <- tuberculosis_dat[c(463:588, 1051:1176),]
+tuberculosis_ci <- tuberculosis_ci[463:nrow(tuberculosis_ci),]
+
+ggplot(tuberculosis_dat,aes(x=Date, y=value))+
+  geom_ribbon(data=tuberculosis_ci,aes(x = Date, ymin = lower, ymax = upper), inherit.aes = FALSE,fill = mycolors[12], alpha = 0.3)+
+  geom_line(aes(color = Type, linetype = Type)) + 
+  scale_color_manual(values = c(alpha(mycolors[12], 1), alpha(mycolors[12], 0.6)))+
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  labs(y = "Mortality counts") +
+  labs(title = "Tuberculosis data versus GLARMA predicted values")
+
+# RMSE
+sqrt(mean((post_1892_data$Tuberculosis_age-pred_tuberculosis)^2))
+mean(abs(post_1892_data$Tuberculosis_age-pred_tuberculosis))
+```
+
+Forest plots for result comparison
+```{r}
+# Bronchiolitis forest plot
+# Effect sizes
+# Mean temperature (exp(-0.028148)-1)*100 lower: (exp(-0.028148-0.005181)-1)*100, upper: (exp(-0.028148+0.005181)-1)*100
+# West (exp(-0.022464)-1)*100 lower: (exp(-0.022464-0.011319)-1)*100, upper: (exp(-0.022464+0.011319)-1)*100
+
+bronchiolitis_cis <- 
+  structure(list(
+    mean  = c(NA, -2.775554, -2.221356), 
+    lower = c(NA, -3.277971, -3.321873),
+    upper = c(NA, -2.270527, -1.108312)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -3L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Mean temperature", "Wind direction: West"),
+  c("Effect", "-2.78", "-2.22"),
+  c("95%-CI", "[-3.28, -2.27]", "[-3.32, -1.11]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           bronchiolitis_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,2)),
+           clip = c(-4,4), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[1],
+                          line = mycolors[1],
+                          summary = mycolors[1]),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+# Diarrhoea forest plot
+# Effect sizes
+# Mean temperature (exp(0.056086)-1)*100 lower: (exp(0.056086-0.003930)-1)*100, upper: (exp(0.056086+0.003930)-1)*100
+# Temperature sd (exp(0.074293)-1)*100 lower: (exp(0.074293-0.019000)-1)*100, upper: (exp(0.074293+0.019000)-1)*100
+# Oost (exp(-0.008931)-1)*100 lower: (exp(-0.008931-0.004136)-1)*100, upper: (exp(-0.008931+0.004136)-1)*100
+# West (exp(-0.022487)-1)*100 lower: (exp(-0.022487-0.007976)-1)*100, upper: (exp(-0.022487+0.007976)-1)*100
+# Zuidwest (exp(-0.012821)-1)*100 lower: (exp(-0.012821-0.006134)-1)*100, upper: (exp(-0.012821+0.006134)-1)*100
+# Harde storm (exp(-0.068519)-1)*100 lower: (exp(-0.068519-0.022059)-1)*100, upper: (exp(-0.068519+0.022059)-1)*100
+# Stil (exp(0.024188)-1)*100 lower: (exp(0.024188-0.011558)-1)*100, upper: (exp(0.024188+0.011558)-1)*100
+
+diarrhea_cis <- 
+  structure(list(
+    mean  = c(NA, 5.768864, 7.712236, -0.8891237, -2.223605, -1.273916, -6.622428, 2.44829), 
+    lower = c(NA, 5.354008, 5.685023, -1.2982, -3.000368, -1.877648, -8.659691, 1.27101),
+    upper = c(NA, 6.185354, 9.778334, -0.4783522, -1.440622,-0.6664692, -4.539726, 3.639257)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -8L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Mean temperature", "Temperature standard deviation", 
+     "Wind direction: Oost", "Wind direction: West", "Wind direction: Zuidwest", 
+    "Wind force: Harde storm", "Wind force: Stil"),
+  c("Effect", "5.77", "7.71", "-0.89", 
+    "-2.22", "-1.27", "-6.62", "2.45"),
+  c("95%-CI", "[5.35, 6.19]", "[5.69, 9.78]", "[-1.30, -0.48]", 
+    "[-3.00, -1.44]", "[-1.87, -0.67]", "[-8.66, -4.54]", "[1.27, 3.64]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           diarrhea_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE,rep(FALSE,7)),
+           clip = c(-10,10), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[5],
+                          line = mycolors[5],
+                          summary = mycolors[5]),
+           xlab = "Percentage change in mortality",
+          graphwidth = unit(20, "cm"))
+
+# Old forest plot
+summary(glarma_old)
+# Effect sizes
+# Mean temperature (exp(-0.0200594)-1)*100 lower: (exp(-0.0200594-0.0048364)-1)*100, upper: (exp(-0.0200594+0.0048364)-1)*100
+# Temperature sd (exp(0.0431457)-1)*100 lower: (exp(0.0431457-0.0108542)-1)*100, upper: (exp(0.0431457+0.0108542)-1)*100
+# Oost (exp(-0.0051543)-1)*100 lower: (exp(-0.0051543-0.0024621)-1)*100, upper: (exp(-0.0051543+0.0024621)-1)*100
+# Matig (exp(0.0140156)-1)*100 lower: (exp(0.0140156-0.0046486)-1)*100, upper: (exp(0.0140156+0.0046486)-1)*100
+# Matige koelte (exp(0.0369332)-1)*100 lower: (exp(0.0369332-0.0114054)-1)*100, upper: (exp(0.0369332+0.0114054)-1)*100
+# Slappe koelte (exp(0.0222244)-1)*100 lower: (exp(0.0222244-0.0059765)-1)*100, upper: (exp(0.0222244+0.0059765)-1)*100
+# Dry hours (exp(0.0235742)-1)*100 lower: (exp(0.0235742-0.0100046)-1)*100, upper: (exp(0.0235742+0.0100046)-1)*100
+
+old_cis <- 
+  structure(list(
+    mean  = c(NA, -1.985955, 4.409001, -0.5141039, 1.411428, 3.762371, 2.24732, 2.385427), 
+    lower = c(NA, -2.458846, 3.281853, -0.7587469, 0.9411008, 2.585642, 1.638061, 1.366208),
+    upper = c(NA, -1.510772, 5.54845, -0.2688579, 1.883946, 4.952596, 2.860231, 3.414893)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -8L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Mean temperature", "Temperature standard deviation", 
+     "Wind direction: Oost", "Wind force: Matig", "Wind force: Matige koelte", 
+    "Wind force: Slappe koelte", "Dry hours"),
+  c("Effect", "-1.99", "4.41", "-0.51", "1.41", "3.76", "2.25", "2.39"),
+  c("95%-CI", "[-2.46, -1.51]", "[3.28, 5.55]", "[-0.76, -0.27]", "[0.94, 1.88]", "[2.59, 4.95]", "[1.64, 2.86]", "[1.37, 3.41]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           old_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,7)),
+           clip = c(-6,6), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[9],
+                          line = mycolors[9],
+                          summary = mycolors[9]),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+# Pneumonia forest plot
+summary(glarma_pneumonia)
+# Effect sizes
+# Mean temperature (exp(-0.0535588)-1)*100 lower: (exp(-0.0535588-0.0080852)-1)*100, upper: (exp(-0.0535588+0.0080852)-1)*100
+# Max temperature (exp(0.0143361)-1)*100 lower: (exp(0.0143361-0.0065341)-1)*100, upper: (exp(0.0143361+0.0065341)-1)*100
+# Max pressure (exp(0.0096955)-1)*100 lower: (exp(0.0096955-0.0046488)-1)*100, upper: (exp(0.0096955+0.0046488)-1)*100
+# Pressure sd (exp(-0.0364271)-1)*100 lower: (exp(-0.0364271-0.0135209)-1)*100, upper: (exp(-0.0364271+0.0135209)-1)*100
+# Noordwest (exp(-0.0144905)-1)*100 lower: (exp(-0.0144905-0.0050811)-1)*100, upper: (exp(-0.0144905+0.0050811)-1)*100
+# Slappe koelte (exp(0.0153513)-1)*100 lower: (exp(0.0153513-0.0054570)-1)*100, upper: (exp(0.0153513+0.0054570)-1)*100
+# Stil (exp(0.0283929)-1)*100 lower: (exp(0.0283929-0.0127004)-1)*100, upper: (exp(0.0283929+0.0127004)-1)*100
+
+pneumonia_cis <- 
+  structure(list(
+    mean  = c(NA, -5.214979, 1.443935, 0.9742654, -3.577162, -1.438602, 1.546974, 2.879982), 
+    lower = c(NA, -5.978246, 0.7832515, 0.5059456, -4.872111, -1.938132, 0.994341, 1.581627),
+    upper = c(NA, -4.445517, 2.108951, 1.444767, -2.264584, -0.936527, 2.10263, 4.194931)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -8L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Mean temperature", "Max temperature", 
+     "Max pressure", "Pressure standard deviation", "Wind direction: Noordwest", 
+    "Wind force: Slappe koelte", "Wind force: Stil"),
+  c("Effect", "-5.21", "1.44", "0.97", "-3.58", "-1.44", "1.55", "2.88"),
+  c("95%-CI", "[-5.98, -4.45]", "[0.78, 2.11]", "[0.51, 1.44]", "[-4.87, -2.26]", "[-1.94, -0.94]", "[0.99, 2.10]", "[1.58, 4.19]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           pneumonia_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,7)),
+           clip = c(-6,6), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[10],
+                          line = mycolors[10],
+                          summary = mycolors[10]),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+# Stroke forest plot
+summary(glarma_stroke)
+# Effect sizes
+# Mean temperature (exp(-0.0347125)-1)*100 lower: (exp(-0.0347125-0.0021142)-1)*100, upper: (exp(-0.0347125+0.0021142)-1)*100
+# Heat days (exp(0.0611316)-1)*100 lower: (exp(0.0611316-0.0205551)-1)*100, upper: (exp(0.0611316+0.0205551)-1)*100
+# Slappe koelte (exp(0.0109000)-1)*100 lower: (exp(0.0109000-0.0040762)-1)*100, upper: (exp(0.0109000+0.0040762)-1)*100
+
+stroke_cis <- 
+  structure(list(
+    mean  = c(NA, -3.411693, 6.30388, 1.095962), 
+    lower = c(NA, -3.615685, 4.141097, 0.6847135),
+    upper = c(NA, -3.20727, 8.511579, 1.508891)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -4L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Mean temperature", "Heat days", "Wind force: Slappe koelte"),
+  c("Effect", "-3.41", "6.30", "1.10"),
+  c("95%-CI", "[-3.62, -3.21]", "[4.14, 8.51]", "[0.68, 1.51]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           stroke_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,3)),
+           clip = c(-9,9), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[11],
+                          line = mycolors[11],
+                          summary = mycolors[11]),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+
+# Tuberculosis forest plot
+summary(glarma_tuberculosis)
+# Effect sizes
+# Min temperature (exp(-0.011168)-1)*100 lower: (exp(-0.011168-0.005687)-1)*100, upper: (exp(-0.011168+0.005687)-1)*100
+# Bijna stil (exp(0.010522)-1)*100 lower: (exp(0.010522-0.004443)-1)*100, upper: (exp(0.010522+0.004443)-1)*100
+# Hard (exp(0.011000)-1)*100 lower: (exp(0.011000-0.003952)-1)*100, upper: (exp(0.011000+0.003952)-1)*100
+# Slappe koelte (exp(0.011431)-1)*100 lower: (exp(0.011431-0.002602)-1)*100, upper: (exp(0.011431+0.002602)-1)*100
+# Stijve koelte (exp(-0.016896)-1)*100 lower: (exp(-0.016896-0.003994)-1)*100, upper: (exp(-0.016896+0.003994)-1)*100
+
+tuberculosis_cis <- 
+  structure(list(
+    mean  = c(NA, -1.110587, 1.057755, 1.106072, 1.149658, -1.675406), 
+    lower = c(NA, -1.671375, 0.6097515, 0.7072896, 0.8868091, -2.067332),
+    upper = c(NA, -0.5466007, 1.507754, 1.506434, 1.413192, -1.281913)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -6L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Minimum temperature", "Wind force: Bijna stil", 
+     "Wind force: Hard", "Wind force: Slappe koelte", "Wind force: Stijve koelte"),
+  c("Effect", "-1.11", "1.06", "1.11", "1.15", "-1.68"),
+  c("95%-CI", "[-1.67, -0.55]", "[0.61, 1.51]", "[0.71, 1.51]", "[0.89, 1.41]", "[-2.07, -1.28]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           tuberculosis_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,5)),
+           clip = c(-3,3), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[12],
+                          line = mycolors[12],
+                          summary = mycolors[12]),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+# Whooping cough forest plot
+summary(glarma_whooping_cough)
+# Effect sizes
+# Pressure sd (exp(0.0371554)-1)*100 lower: (exp(0.0371554-0.0186840)-1)*100, upper: (exp(0.0371554+0.0186840)-1)*100
+# Heat days (exp(0.1319753)-1)*100 lower: (exp(0.1319753-0.0379110)-1)*100, upper: (exp(0.1319753+0.0379110)-1)*100
+
+whooping_cough_cis <- 
+  structure(list(
+    mean  = c(3.785429, 14.10801), 
+    lower = c(1.864305, 9.863039),
+    upper = c(5.742785, 18.51701)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(-2L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Pressure standard deviation", "Heat days"))
+
+forestplot(tabletext, 
+           fn.ci_norm = fpDrawCircleCI,
+           whooping_cough_cis,
+           new_page = TRUE,
+           is.summary = c(rep(FALSE,2)),
+           clip = c(-19,19), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = mycolors[14],
+                          line = mycolors[14],
+                          summary = mycolors[14]),
+           xlab = "Percentage change in mortality")
+
+# ACM forest plot
+summary(glarma_acm)
+# Effect sizes
+# Min temperature (exp(-0.0085314)-1)*100 lower: (exp(-0.0085314-0.0034653)-1)*100, upper: (exp(-0.0085314+0.0034653)-1)*100
+# Heat days (exp(0.0232269)-1)*100 lower: (exp(0.0232269-0.0079093)-1)*100, upper: (exp(0.0232269+0.0079093)-1)*100
+# Gladde (exp(-0.0007614)-1)*100 lower: (exp(-0.0007614-0.0033223)-1)*100, upper: (exp(-0.0007614+0.0033223)-1)*100
+# Matige koelte (exp(0.0199350)-1)*100 lower: (exp(0.0199350-0.0051726)-1)*100, upper: (exp(0.0199350+0.0051726)-1)*100
+# Slappe koelte (exp(0.0134335)-1)*100 lower: (exp(0.0134335-0.0038456)-1)*100, upper: (exp(0.0134335+0.0038456)-1)*100
+
+acm_cis <- 
+  structure(list(
+    mean  = c(NA, -0.8495111, 2.349875, -0.07611102, 2.013503, 1.352413), 
+    lower = c(NA, -1.192503, 1.543552, -0.4075373, 1.48719, 0.9634011),
+    upper = c(NA, -0.5053289, 3.1626, 0.2564182, 2.542545, 1.742925)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -6L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Variable", "Minimum temperature", "Wind force: Bijna stil", 
+     "Wind force: Hard", "Wind force: Slappe koelte", "Wind force: Stijve koelte"),
+  c("Effect", "-0.85", "2.35", "-0.08", "2.01", "1.35"),
+  c("95%-CI", "[-1.19, -0.51]", "[1.54, 3.16]", "[-0.41, 0.26]", "[1.49, 2.54]", "[0.96, 1.74]"))
+
+forestplot(tabletext, 
+           graph.pos = 2,
+           hrzl_lines = gpar(col = "#444444"),
+           fn.ci_norm = fpDrawCircleCI,
+           acm_cis,
+           new_page = TRUE,
+           is.summary = c(TRUE, rep(FALSE,5)),
+           clip = c(-4,4), 
+           xlog = F, 
+           lty.ci = 2,
+           boxsize = 0.05,
+           col = fpColors(box = "darkslateblue",
+                          line = "darkslateblue",
+                          summary = "darkslateblue"),
+           xlab = "Percentage change in mortality",
+           graphwidth = unit(20, "cm"))
+
+
+# TEMPERATURE TEST
+# Effect sizes
+# Bronch (exp(-0.028148)-1)*100, lower: (exp(-0.028148-0.005181)-1)*100, upper: (exp(-0.028148+0.005181)-1)*100
+# Diarrhoea (exp(0.056086)-1)*100 lower: (exp(0.056086-0.003930)-1)*100, upper: (exp(0.056086+0.003930)-1)*100
+# Measles (exp(-1.084e-01)-1)*100 lower: (exp(-1.084e-01-3.310e-02)-1)*100, upper: (exp(-1.084e-01+3.310e-02)-1)*100
+# Old (exp(-0.0200594)-1)*100 lower: (exp(-0.0200594-0.0048364)-1)*100, upper: (exp(-0.0200594+0.0048364)-1)*100
+# Pneumonia (exp(-0.0535588)-1)*100 lower: (exp(-0.0535588-0.0080852)-1)*100, upper: (exp(-0.0535588+0.0080852)-1)*100
+# Stroke (exp(-0.0347125)-1)*100 lower: (exp(-0.0347125-0.0021142)-1)*100, upper: (exp(-0.0347125+0.0021142)-1)*100
+
+temp_cis <- 
+  structure(list(
+    mean  = c(NA, -2.775554, 5.768864, -10.27314, -1.985955, -5.214979, -3.411693), 
+    lower = c(NA, -3.277971, 5.354008, -13.19448, -2.458846, -5.978246, -3.615685),
+    upper = c(NA, -2.270527, 6.185354, -7.253479, -1.510772, -4.445517, -3.20727)),
+    .Names = c("mean", "lower", "upper"), 
+    row.names = c(NA, -7L), 
+    class = "data.frame")
+
+tabletext <- cbind(
+  c("Cause of death", "Bronchiolitis", 
+    "Diarrhoea", "Measles", "Old age causes", "Pneumonia", 
+    "Stroke"))
+
+# Correct colors: bronchiolitis = mycolors[1], cancer = mycolors[2], cardiovascular = mycolors[3], croup = mycolors[4], diarrhoea = mycolors[5], drowning = mycolors[6], measles = mycolors[7], meningitis = mycolors[8], old = mycolors[9], pneumonia = mycolors[10], stroke = mycolors[11], tuberculosis = mycolors[12], typhus = mycolors[13], whooping cough = mycolors[14], acm = darkslateblue
+
+fn <- local({
+  i = 0
+  no_lines <- sum(!is.na(cochrane_from_rmeta$mean))
+  b_clrs=c(mycolors[1],mycolors[5],mycolors[7], mycolors[9], mycolors[10], mycolors[11])
+  l_clrs = c(mycolors[1],mycolors[5],mycolors[7], mycolors[9], mycolors[10], mycolors[11])
+
+  function(..., clr.line, clr.marker){
+    i <<- i + 1
+    fpDrawCircleCI(..., clr.line = l_clrs[i], clr.marker = b_clrs[i])
+  }
+})
+forestplot(tabletext, 
+           fn.ci_norm = fn,
+           temp_cis,new_page = TRUE,
+           is.summary = c(TRUE,rep(FALSE,6)),
+           clip = c(-14,14), 
+           xlog = F, 
+           boxsize = 0.05,
+           lty.ci = 2,
+           col=fpColors(summary="royalblue"),
+           xlab = "Percentage change in mortality by 1 degree celcius increase in average monthly temperature")
+```
